@@ -1,0 +1,1 @@
+//! A pure rust implementation of the ELMo model, based on the original paper. 
