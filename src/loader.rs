@@ -28,10 +28,10 @@ mod data_loading {
 
     struct ELMoText {
         examples: Vec<String>,
-        token2int: HashMap<String, u8>,
-        char2int: Option<HashMap<String, u8>>,
-        max_len_sentence: Option<usize>,
-        max_len_token: Option<usize>
+        char2int: HashMap<char, u8>,
+        max_len_token: Option<usize>,
+        char_start: char,
+        char_end: char
     }
 
     impl DatasetBuilder for ELMoText {
@@ -47,55 +47,49 @@ mod data_loading {
             let mut tensors: Vec<Tensor> = Vec::new();
             let example = self.examples.get(index).ok_or("example index not found in examples indices")?;            
 
-            let map_str_to_int = |
-            strs: &Vec<String>, str2int: &HashMap<String, u8>, str_type: &str, max_len: Option<usize>
-            | -> Vec<u8> {
+            let map_chars_to_ints = | token: &Vec<char>| -> Vec<u8> {
 
-                let sos = self.token2int.get("<SOS_{str_type}").ok_or("SOS not found").unwrap();
-                let eos = self.token2int.get("<EOS_{str_type}>").ok_or("EOS not found").unwrap();
-                let unk = self.token2int.get("<UNK_{str_type}>").ok_or("UNK not found").unwrap();
-                let pad = self.token2int.get("<PAD_{str_type}>").ok_or("UNK not found").unwrap();
-
-                // map tokens strings to token ids
-                // replace uknown tokens with unk id.  
-                let mut str_ids = strs.into_iter().map(|str_| {
-                    let str_id = str2int.get(str_).ok_or(unk).unwrap().to_be();
-                    str_id
+                // map a token to a series of char ids
+                // replace uknown chars with sequence of bytes
+                let mut char_ids = token.into_iter().map(|c| {
+                    let char_id = self.char2int.get(c).ok_or({
+                        let mut char_buf: [u8; 2] = [0; 2]; 
+                        c.encode_utf8(&mut char_buf);
+                    }).unwrap().to_be();
+                    char_id
                 }).collect::<Vec<u8>>();
-                // wrap with SOS and EOS.
-                str_ids.insert(0, sos.to_be());
-                str_ids.push(eos.to_be());
-                // obey to max_len_sentence with  pad or truncate
-                let n_str_ids = str_ids.len();
-                match max_len {
+                
+                // obey to max_len_token with pad or truncate
+                // pad done with ' '
+                let token_len = char_ids.len();
+                match self.max_len_token {
                     None => {},
-                    Some(max_len) => {
-                        if max_len <= n_str_ids {
-                            str_ids.truncate(max_len);
+                    Some(max_len_token) => {
+                        if max_len_token <= token_len {
+                            char_ids.truncate(max_len_token);
                         } else {
-                            for _ in n_str_ids..max_len {
-                                str_ids.push(pad.to_be());
+                            for _ in token_len..max_len_token {
+                                char_ids.push(b' ');
                             }
                         }
                     }
                 };
-                str_ids
+                char_ids
 
             };
 
             let tokens = example.clone().split(" ").map(|x| x.to_owned()).collect::<Vec<String>>();
+            // move each token from string of chars to int encoding of fixed maximal length
+            // wrap token with SOT and EOT (SOT is $, EOT is ^), pad with with spaces or truncate.
+            for token in &tokens {
+                
+                let mut token_vec = token.split("").map(|x| x.chars().nth(0).unwrap()).collect::<Vec<char>>();
+                token_vec.insert(0, self.char_start);
+                token_vec.push(self.char_end);
 
-            let token_ids = map_str_to_int(&tokens, &self.token2int, "TOKEN", self.max_len_sentence);
-            let token_tensor = Tensor::of_slice(&token_ids);
-            tensors.push(token_tensor);
-
-            if self.char2int.is_some() {
-                for token in &tokens {
-                    let token_vec = token.split("").map(|x| x.to_string()).collect::<Vec<String>>();
-                    let char_ids = map_str_to_int(&token_vec, self.char2int.as_ref().unwrap(), "CHAR", self.max_len_token);
-                    let char_tensor = Tensor::of_slice(&char_ids);
-                    tensors.push(char_tensor);
-                }
+                let char_ids = map_chars_to_ints(&token_vec);
+                let char_tensor = Tensor::of_slice(&char_ids);
+                tensors.push(char_tensor);
             }
 
             Ok(tensors)
