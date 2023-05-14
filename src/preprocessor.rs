@@ -9,9 +9,9 @@ mod preprocessor {
 
     use counter::Counter;
     use itertools::Itertools;
-    pub(in crate) struct preprocessor {}
+    pub(in crate) struct Preprocessor {}
 
-    impl preprocessor {
+    impl Preprocessor {
 
         fn new() -> Self { Self { } }
 
@@ -25,24 +25,40 @@ mod preprocessor {
         // rust strings are vectors, thus there should not be a problem to join X sentences to one variable of 
         // type String, if the first one fits in memory. In other words, if we were able to load X sentences
         // into a Vec<String>, those should fit in one chunk. 
-        fn count(&self, sentences: &Vec<String>) -> Counter<String, i8> {
+        fn count_tokens(&self, sentences: &Vec<String>) -> Counter<String, i8> {
             let token_chunk = sentences.join(" ");
             let token2count: Counter<String, i8> = token_chunk.split_whitespace().map(|x| x.to_string()).collect();
             token2count
         }
 
-        fn preprocess(&mut self, sentences: &mut Vec<String>, vocab_size: usize) {
+        // uses the counter to get a vector of unique chars
+        fn count_chars(&self, vocab: &Vec<String>) -> Counter<char, i8> {
+            let char_chunk = vocab.join("");
+            let char2count: Counter<char, i8> = char_chunk.chars().collect();
+            char2count
+        }
+
+        fn preprocess(&mut self, sentences: &mut Vec<String>, vocab_size: usize) -> (Vec<String>, Vec<char>){
 
             // strip duplicated sentences
             self.unique(sentences);
 
             // create vocabulary of vocab_size most common tokens
-            let token2count = self.count(sentences.as_ref());
-            let mut vocab: Vec<(String, i8)> = token2count.most_common_ordered();
+            let token2count = self.count_tokens(sentences.as_ref());
+            let mut vocab: Vec<String> = token2count.most_common_ordered()
+            .into_iter().map(|(s, _)| s).collect::<Vec<String>>();
             vocab.truncate(vocab_size);
+
+            // add SOS, EOS and UNK to vocab
+            vocab.append(&mut vec!["<SOS>", "<EOS>", "<UNK>"].into_iter().map(|x| x.to_string()).collect_vec());
+
+            // crate vocabulary of chars
+            let mut char2count = self.count_chars(&vocab);
+            let chars = char2count.into_iter().map(|(c, _)| c).collect::<Vec<char>>();
 
             // replace words not in voabulary or under 3 occurrences with <unk>, pad with SOS + EOS
             // will happen in the loader stages, with random shuffling for each iteration (pytorch style)
+            (vocab, chars)
         }
 
     }
