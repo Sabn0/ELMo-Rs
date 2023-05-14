@@ -7,6 +7,8 @@
 
 mod preprocessor {
 
+    use std::collections::HashMap;
+
     use counter::Counter;
     use itertools::Itertools;
     pub(in crate) struct Preprocessor {}
@@ -38,7 +40,7 @@ mod preprocessor {
             char2count
         }
 
-        fn preprocess(&mut self, sentences: &mut Vec<String>, vocab_size: usize) -> (Vec<String>, Vec<char>){
+        fn preprocess(&mut self, sentences: &mut Vec<String>, vocab_size: usize) -> (HashMap<String, u8>, HashMap<String, u8>){
 
             // strip duplicated sentences
             self.unique(sentences);
@@ -51,14 +53,16 @@ mod preprocessor {
 
             // add SOS, EOS and UNK to vocab
             vocab.append(&mut vec!["<SOS>", "<EOS>", "<UNK>"].into_iter().map(|x| x.to_string()).collect_vec());
+            let token2int: HashMap<String, u8> = vocab.iter().enumerate().map(|(i, t)| (t.to_string(), i as u8)).collect();
 
             // crate vocabulary of chars
-            let mut char2count = self.count_chars(&vocab);
+            let char2count = self.count_chars(&vocab);
             let chars = char2count.into_iter().map(|(c, _)| c).collect::<Vec<char>>();
+            let char2int: HashMap<String, u8> = chars.iter().enumerate().map(|(i, c)| (c.to_string(), i as u8)).collect();
 
             // replace words not in voabulary or under 3 occurrences with <unk>, pad with SOS + EOS
             // will happen in the loader stages, with random shuffling for each iteration (pytorch style)
-            (vocab, chars)
+            (token2int, char2int)
         }
 
     }
