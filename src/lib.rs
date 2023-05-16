@@ -1,1 +1,17 @@
-//! A pure rust implementation of the ELMo model, based on the original paper. 
+//! A pure rust implementation of the ELMo model, based on the original paper.
+//! 
+//! 
+//! 
+
+
+mod preprocessor;
+mod loader;
+mod model;
+mod config;
+mod trainer;
+
+pub use loader::data_loading::DatasetBuilder;
+pub use loader::data_loading::ELMoText;
+pub use loader::data_loading::Loader;
+pub use preprocessor::do_preprocess::Preprocessor;
+pub use model::CharLevelNet;
