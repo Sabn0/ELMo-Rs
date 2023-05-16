@@ -25,9 +25,9 @@ impl CnnBlock {
 }
 
 impl ModuleT for CnnBlock {
-    fn forward_t(&self, xs: &Tensor, train: bool) -> Tensor {
+    fn forward_t(&self, xs: &Tensor, _train: bool) -> Tensor {
 
-        let dims = xs.internal_shape_as_tensor();
+        let _dims = xs.internal_shape_as_tensor();
 
         let conv_out = xs.apply(&self.conv);
         let act_out = conv_out.tanh();
@@ -40,7 +40,7 @@ impl ModuleT for CnnBlock {
 struct Highway {}
 
 impl ModuleT for Highway {
-    fn forward_t(&self, xs: &Tensor, train: bool) -> Tensor {
+    fn forward_t(&self, xs: &Tensor, _train: bool) -> Tensor {
         xs.tanh()
     }
 }
