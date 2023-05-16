@@ -5,7 +5,7 @@
 // randomization?). then, tokenizing done by split and vocabulary is made by tokens. The new sentences vector
 // is the output of this preprocessor. Order randomization will be done in the training stage before epochs.
 
-mod preprocessor {
+pub mod do_preprocess {
 
     use std::collections::HashMap;
 
@@ -39,11 +39,11 @@ mod preprocessor {
         }
     }
 
-    pub(in crate) struct Preprocessor {}
+    pub struct Preprocessor {}
 
     impl Preprocessor {
 
-        fn new() -> Self { Self { } }
+        pub fn new() -> Self { Self { } }
 
         // remove duplicated sentences, mutate the corpus in self
         fn unique(&self, sentences: &mut Vec<String>) {
@@ -52,10 +52,11 @@ mod preprocessor {
         }
 
         // uses the counter to get a vocabulary of words
-        fn count_tokens(&self, sentences: &Vec<String>, vocab_size: usize, min_count: usize) -> Vec<String> {
+        fn count_tokens(&self, sentences: &Vec<String>, vocab_size: usize, min_count: usize, str_unk: &str) -> Vec<String> {
             let chunk = sentences.join(" ");
             let token2count: Counter<String, i8> = chunk.split_whitespace().map(|x| x.to_string()).collect();
-            let tokens = token2count.k_most_common_ordered(vocab_size);
+            let mut tokens = token2count.k_most_common_ordered(vocab_size);
+            tokens.push((String::from(str_unk), tokens.len() as i8));
             let tokens = tokens
             .into_iter()
             .filter(|(_, c)| *c as usize >= min_count)
@@ -75,14 +76,18 @@ mod preprocessor {
         }
 
 
-        fn preprocess(&mut self, sentences: &mut Vec<String>, vocab_size: usize, min_count: usize) -> (HashMap<String, u8>, HashMap<char, u8>) {
+        pub fn preprocess(&mut self, sentences: &mut Vec<String>,
+             vocab_size: usize,
+             min_count: usize,
+             char_start: char,
+             char_end: char,
+             str_unk: &str
+        ) -> (HashMap<String, u8>, HashMap<char, u8>) {
 
             // strip duplicated sentences
             self.unique(sentences);
 
             // pad sentences with SOS + EOS
-            let char_start = '$';
-            let char_end = '^';
             sentences.iter_mut().for_each(|s| { // filtering future EOT and SOT chars
                 *s = s.trim_matches(' ').to_string(); // remove leading and trailing spaces
                 *s = s.chars().filter(|x| x != &char_start && x != &char_end).collect::<String>();
@@ -91,12 +96,15 @@ mod preprocessor {
             });
 
             // create vocabulary of words
-            let tokens = self.count_tokens(&sentences, vocab_size, min_count);
+            let tokens = self.count_tokens(&sentences, vocab_size, min_count, str_unk);
             let token2int: HashMap<String, u8> = <String as CollectT>::collect_gen(tokens);
 
             // create vocabulary of chars
             let chars = self.count_chars(&sentences, char_start, char_end);
             let char2int: HashMap<char, u8> = <char as CollectT>::collect_gen(chars);
+
+            // token2int is bound with vocab_size tokens, minimum occurrences of min count. It countains and SOS,
+            // EOS and UNK tokens. 
 
             // char2int has all the chars in the corpus + start + end chars, that has been filtered from the sentences.
             // sentences don't have duplications, padded with SOS and EOS tokens.

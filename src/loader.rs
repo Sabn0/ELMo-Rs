@@ -5,33 +5,45 @@ consider having a custom error for this module
  */
 
 
-mod data_loading {
+pub mod data_loading {
 
     use std::collections::HashMap;
     use std::error::Error;
 
-    use rayon::str::Split;
-    use rayon::str::SplitWhitespace;
     use tch::Device;
     use tch::Kind;
-    use tch::data::TextData;
-    use tch::data::TextDataIter;
     use tch::Tensor;
-    use tch::vision::dataset::Dataset;
 
 
-    pub(in crate) trait DatasetBuilder {
+    pub trait DatasetBuilder {
         type Error;
         fn get_len(&self) -> u64;
-        fn get_example(&self, index: usize) -> Result<Vec<Tensor>, Self::Error>;
+        fn get_example(&self, index: usize) -> Result<(Tensor, Tensor), Self::Error>;
     }
 
-    struct ELMoText {
+    pub struct ELMoText {
         examples: Vec<String>,
+        token2int: HashMap<String, u8>,
         char2int: HashMap<char, u8>,
         max_len_token: Option<usize>,
         char_start: char,
-        char_end: char
+        char_end: char,
+        str_unk: String
+    }
+
+    impl ELMoText {
+        pub fn new(examples: Vec<String>, token2int: HashMap<String, u8>, char2int: HashMap<char, u8>, 
+            max_len_token: Option<usize>, char_start: char, char_end: char,str_unk: String ) -> Self {
+            Self {
+                examples: examples,
+                token2int: token2int,
+                char2int: char2int,
+                max_len_token: max_len_token,
+                char_start: char_start,
+                char_end: char_end,
+                str_unk: str_unk
+            }
+        }
     }
 
     impl DatasetBuilder for ELMoText {
@@ -42,9 +54,15 @@ mod data_loading {
             self.examples.len() as u64
         }
 
-        fn get_example(&self, index: usize) -> Result<Vec<Tensor>, Self::Error> {
+        fn get_example(&self, index: usize) -> Result<(Tensor, Tensor), Self::Error> {
             
-            let mut tensors: Vec<Tensor> = Vec::new();
+            // Tensor for chars: each element in the tensor is a tensor of char encodings.
+            // the output is of shape (n, max_len_token), n is the length of the sentence.
+
+            // Tensor for labels: each element in the tensor is a label of a token in the sentence.
+            // the output is of shape (n, 1), n is the length of the sentence.
+
+            let mut inputs: Vec<Tensor> = Vec::new();
             let example = self.examples.get(index).ok_or("example index not found in examples indices")?;            
 
             let map_chars_to_ints = | token: &Vec<char>| -> Vec<u8> {
@@ -79,6 +97,11 @@ mod data_loading {
             };
 
             let tokens = example.clone().split(" ").map(|x| x.to_owned()).collect::<Vec<String>>();
+            let mut labels = (&tokens).iter().map(|t| {
+                let label = self.token2int.get(t).ok_or(self.token2int.get(&self.str_unk).unwrap()).unwrap().to_be();
+                Tensor::of_slice(&[label])
+            } ).collect::<Vec<Tensor>>();
+
             // move each token from string of chars to int encoding of fixed maximal length
             // wrap token with SOT and EOT (SOT is $, EOT is ^), pad with with spaces or truncate.
             for token in &tokens {
@@ -89,19 +112,33 @@ mod data_loading {
 
                 let char_ids = map_chars_to_ints(&token_vec);
                 let char_tensor = Tensor::of_slice(&char_ids);
-                tensors.push(char_tensor);
+                inputs.push(char_tensor);
             }
 
-            Ok(tensors)
+            // now, inputs is a vec of tensors, each element is a tensor with a series of ints that represent a token.
+            // to keep in mind that we will predict the 1 token from the 0 token, 2 from 1, ... n-1 from n-2.
+            // so we don't use the last token as an input, and don't use the first token as a label
+
+            let n = inputs.len();
+            let _ = labels.remove(0);
+            let _ = inputs.remove(n-1);
+
+            assert_eq!(inputs.len(), labels.len());
+
+            // move to tensor
+            let inputs_tensor = Tensor::concat(&inputs, 0);
+            let labels_tensor = Tensor::concat(&labels, 0);
+            let output = (inputs_tensor, labels_tensor);
+            Ok(output)
 
         }
     }
 
 
-    struct loader;
-    impl loader {
+    pub struct Loader;
+    impl Loader {
 
-        fn new() -> Self {
+        pub fn new() -> Self {
             Self {}
         }
 
@@ -125,22 +162,36 @@ mod data_loading {
 
         }
 
-        fn get_split_train_dev_test_indices(&self, n_samples: i64) -> Vec<Tensor> {
+        pub fn get_split_train_dev_test_indices(&self, n_samples: i64) -> Vec<Tensor> {
             
             assert!(n_samples > 0, "number of samples for training most be positive");
             
             let split_points: Vec<i64> = self.get_split_train_dev_test_sizes(n_samples);
             let indices: Tensor = Tensor::randperm(n_samples, (Kind::Int8, Device::Cpu));
-            let split_indices = indices.split_with_sizes(&split_points, 0);
+            let split_indices: Vec<Tensor> = indices.split_with_sizes(&split_points, 0);
             split_indices
         }
 
 
-        fn load() {
+        pub fn get_split_train_dev_test(&self, sentences: &Vec<String>) -> Result<Vec<Vec<String>>, Box<dyn Error>> {
 
+            let n_samples = sentences.len() as i64;
+            let split_indices = self.get_split_train_dev_test_indices(n_samples);
+            // split indices is a vector of 3 tensors, each tensor has the indices of one datset
 
+            let mut splits: Vec<Vec<String>> = Vec::new();
+            for indices in split_indices {
+
+                let indices_vec = TryInto::<Vec<i8>>::try_into(indices)?;
+                let split = indices_vec.iter().map(|i| sentences.get(*i as usize).unwrap().to_owned()).collect::<Vec<String>>();
+                splits.push(split);
+            }
+
+            Ok(splits)
 
         }
+
+
     }
 
 }
