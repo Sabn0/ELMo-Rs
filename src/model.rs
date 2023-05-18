@@ -2,8 +2,8 @@
 use std::iter::zip;
 use std::ops::Mul;
 
-use tch::{nn, Tensor};
-use tch::nn::ModuleT;
+use tch::{nn, Tensor, Device, Kind};
+use tch::nn::{ModuleT, RNN};
 
 
 // If a word is of length k charachters, the convolution is What's described as
@@ -193,6 +193,74 @@ impl ModuleT for CharLevelNet {
         let outputs = outputs.apply(&self.out_linear);
         outputs
 
+
+    }
+}
+
+
+#[derive(Debug)]
+pub struct UniLM {
+    lstm_layers: Vec<nn::LSTM>,
+    to_rep: nn::Linear,
+    hidden_dim: i64
+}
+
+impl UniLM {
+    pub fn new(vars: &nn::Path, n_lstm_layers: i64, in_dim: i64, hidden_dim: i64, out_dim: i64) -> Self {
+
+        let mut lstm_layers = Vec::new();
+        for _ in 0..n_lstm_layers {
+            let lm = nn::lstm(vars, in_dim, hidden_dim, Default::default());
+            lstm_layers.push(lm);
+        }
+
+        let to_rep = nn::linear(vars, hidden_dim, out_dim, Default::default());
+
+        Self {
+            lstm_layers: lstm_layers,
+            to_rep: to_rep,
+            hidden_dim: hidden_dim
+        }
+
+
+    }
+}
+
+impl ModuleT for UniLM {
+
+    fn forward_t(&self, xs: &Tensor, _train: bool) -> Tensor {
+        
+        // xs should be (batch_size, sequence_length, out_linear)
+        let dims = xs.internal_shape_as_tensor();
+        let dims = Vec::<i64>::from(dims);
+        let batch_size = dims[0];
+
+        let h = Tensor::zeros(&[batch_size, self.hidden_dim], (Kind::Int, Device::Cpu));
+        let c = Tensor::zeros(&[batch_size, self.hidden_dim], (Kind::Int, Device::Cpu));
+        let mut state = nn::LSTMState((h, c));
+        
+        // need residual connections, so lstm out should be the same size of input
+        let mut out = xs.to_owned().shallow_clone();
+        let mut outputs = vec![xs.to_owned().shallow_clone()];
+
+        for (j, lstm) in (&self.lstm_layers).iter().enumerate() {
+            
+            let out_lstm = lstm.seq_init(&out, &state);
+            out = out_lstm.0;
+            state = out_lstm.1;
+            
+            // out moves (batch_size, sequence_length, hidden_dim) => (batch_size, sequence_length, out_linear)
+            out = out.apply(&self.to_rep);
+
+            outputs.push(out.shallow_clone());
+
+            out += outputs[j].shallow_clone();
+
+        }
+
+        // move n_lstm_layers * (batch_size, sequence_length, out_linear) =>  (n_lstm_layers, batch_size, sequence_length, out_linear)
+        let outputs = Tensor::concat(&outputs, 0);
+        outputs
 
     }
 }
