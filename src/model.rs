@@ -37,39 +37,31 @@ impl ModuleT for CnnBlock {
         
         // xs is of shape (batch_size, 1, token_length, embedding_dim)
         let dims = xs.internal_shape_as_tensor();
-        println!("{:?}", dims);
         let dims = Vec::<i64>::from(dims);
-        let n_dims = dims.len();
-        assert!(n_dims == 4);
+        assert!(4 == dims.len());
 
         let batch_size = dims[0];
         let token_length = dims[2];
         let embedding_dim = dims[3];
-        
         let pool_kernel: i64 = token_length - self.kernel_size + 1;
-        println!("{}", pool_kernel);
 
         // xs reshape : (batch_size, token_length, embedding_dim) => (batch_size, embedding_dim, token_length)
         let xs = xs.reshape(&[batch_size, embedding_dim, token_length]);
-        println!("{}", xs.internal_shape_as_tensor());
 
         // denote token_length = l, out_channels = h = number of filters, kernel_size = w, embedding_dim = d
         // self.conv.w is of shape (h, d, w)
         // conv does (h,d,w) * (batch_size, d, l) => (batch_size, h, l-w+1)
         let conv_out = xs.apply(&self.conv);
-        println!("{:?}", conv_out.internal_shape_as_tensor());
-        
+
         // tanh doesn't change dims, (batch_size, h, l-w+1)
         let act_out = conv_out.tanh();
-        println!("{:?}", act_out.internal_shape_as_tensor());
          
          // max_pool1d moves xs : (batch_size, h, l-w+1) => (batch_size, h, 1)
         let pool_out = act_out.max_pool1d(&[pool_kernel], &[1], &[0], &[1], false);
-        println!("{:?}", pool_out.internal_shape_as_tensor());
 
         // the output should be (batch_size, h)
         let out = pool_out.squeeze_dim(2);
-        println!("{:?}", out.internal_shape_as_tensor());
+
         
         out
     }
@@ -128,35 +120,27 @@ impl ModuleT for CharLevelNet {
         let dims = Vec::<i64>::from(dims);
         let batch_size = &dims[0];
         let seq_length = &dims[1];
-        println!("{:?}", xs.internal_shape_as_tensor());
         
         // iterate over tokens
         let mut outputs = Vec::new();
         for s in 0..*seq_length {
 
-            println!("{}", s);
             let xs_tokens: Tensor = xs.slice(1, s, s+1, 1); // should be (batch_size, 1, token_length)
-            println!("{:?}", xs_tokens.internal_shape_as_tensor());
             let x = xs_tokens.apply(&self.embedding); // should be (batch_size, 1, token_length, embedding_dim)
-            println!("{:?}", x.internal_shape_as_tensor());
 
             let mut token_outputs = Vec::new();
             for conv_block in &self.conv_blocks {
                 let out = conv_block.forward_t(&x, train); // out is of shape (batch_size, n_filters)
-                println!("{}", out.internal_shape_as_tensor());
                 token_outputs.push(out);
             }
 
             // each output in outputs is of shape k * (batch_size, n_filters) => (batch_size, total_filters)
-            println!("{:?}", token_outputs);
             let token_outputs = Tensor::concat(&token_outputs, 1);
-            println!("{:?}", token_outputs.internal_shape_as_tensor());
             outputs.push(token_outputs);
         }
 
         // (sequence_length, batch_size, total_filters) => (batch_size, sequence_length, total_filters)
         let outputs = Tensor::concat(&outputs, 0).reshape(&[*batch_size, *seq_length, -1]);
-        println!("{:?}", outputs.internal_shape_as_tensor());
         outputs
 
     }
