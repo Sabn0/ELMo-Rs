@@ -28,6 +28,8 @@ fn main() {
     let kernel_size = vec![2,3,4,5];
     let highways = 2;
     let char_level_out_dim = 512;
+    let hidden_size = 4096;
+    let lstm_layers = 2;
 
     let device = Device::cuda_if_available();
     println!("{:?}", &device);
@@ -36,13 +38,19 @@ fn main() {
 
     let xs = Tensor::ones(&[3, 9, max_len_token], (Kind::Int, Device::Cpu));
     let ys = Tensor::ones(&[3, 9, max_len_token], (Kind::Int, Device::Cpu));
-    let _opt = Adam::default().build(&vars, 1e-4).unwrap();
+    let mut opt = Adam::default().build(&vars, 1e-4).unwrap();
     
     let mut iter = Iter2::new(&xs, &ys, batch_size);
 
-    for (x, _y) in iter.shuffle().into_iter().to_device(vars.device()) {
+    for (x, y) in iter.shuffle().into_iter().to_device(vars.device()) {
         // move throught training...
-        let _out = model.forward_t(&x, true);
+        let out = model.forward_t(&x, true);
+        // out and y should be both of shape (batch_size, sequence_length, vocab_size)
+        let loss = out.cross_entropy_for_logits(&y);
+
+        opt.backward_step(&loss);
+
+        let _acc = model.batch_accuracy_for_logits(&out, &y, vars.device(), batch_size);
     }
 
     /* 
