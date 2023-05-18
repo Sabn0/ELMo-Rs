@@ -1,5 +1,6 @@
 
 use std::iter::zip;
+use std::ops::Mul;
 
 use tch::{nn, Tensor};
 use tch::nn::ModuleT;
@@ -21,7 +22,6 @@ impl CnnBlock {
         // handling embedding dim d as input channels.
         // hadnling number of filters h as output channels.
         let conv = nn::conv1d(vars, in_channels, out_channels, kernel_size, Default::default());
-        println!("weight: {:?}", conv.ws.internal_shape_as_tensor());
         let kernel_size = kernel_size;
 
         Self {
@@ -68,18 +68,45 @@ impl ModuleT for CnnBlock {
 }
 
 #[derive(Debug)]
-struct Highway {}
+struct Highway {
+    w_t: nn::Linear,
+    w_h: nn::Linear,
+}
+
+impl Highway {
+    
+    fn new(vars: &nn::Path, in_dim: i64, out_dim: i64) -> Self {
+
+        let w_t = nn::linear(vars, in_dim, out_dim, Default::default());
+        let w_h = nn::linear(vars, in_dim, out_dim, Default::default());
+    
+        Self {
+            w_t: w_t,
+            w_h: w_h
+        }
+    }
+
+}
 
 impl ModuleT for Highway {
     fn forward_t(&self, xs: &Tensor, _train: bool) -> Tensor {
-        xs.tanh()
+
+        let t = xs.apply(&self.w_t).sigmoid();
+        let transform_part = xs.apply(&self.w_h).relu().mul(&t);
+        let carry_part = xs.mul(1-t);
+        let out: Tensor = transform_part + carry_part;
+        out
+
+        // xs should remain (batch_size, total_filters) from input to end
     }
 }
 
 #[derive(Debug)]
 pub struct CharLevelNet {
     embedding: nn::Embedding,
-    conv_blocks: Vec<CnnBlock>
+    conv_blocks: Vec<CnnBlock>,
+    highways: Vec<Highway>,
+    out_linear: nn::Linear
 }
 
 impl CharLevelNet {
@@ -88,22 +115,36 @@ impl CharLevelNet {
          embedding_dim: i64, 
          in_channels: i64, 
          out_channels: Vec<i64>, 
-         kernel_size: Vec<i64>) -> Self {
+         kernel_size: Vec<i64>, 
+         highways: i64, 
+         char_level_out_dim: i64) -> Self {
 
             // out_channels = number of filters
             // kernel_size = matching kernel width
 
         let embedding = nn::embedding(vars, vocab_size,  embedding_dim, Default::default());
         let mut conv_blocks = Vec::new();
-        for (out_channel, kernel_size) in zip(out_channels, kernel_size) {
-            let conv_block = CnnBlock::new(vars, in_channels, out_channel, kernel_size);
+        for (out_channel, kernel_size) in zip(&out_channels, kernel_size) {
+            let conv_block = CnnBlock::new(vars, in_channels, *out_channel, kernel_size);
             conv_blocks.push(conv_block);
         }
 
+        // total filters should be the sum over out_channels
+        let total_filters: i64 = (&out_channels).iter().sum();
+        let mut highway_layers = Vec::new();
+        for _ in 0..highways {
+            let highway = Highway::new(vars, total_filters, total_filters);
+            highway_layers.push(highway);
+        }
+
+        // output to linear
+        let out_linear = nn::linear(vars, total_filters, char_level_out_dim, Default::default());
         
         Self {
             embedding: embedding,
-            conv_blocks: conv_blocks
+            conv_blocks: conv_blocks,
+            highways: highway_layers,
+            out_linear: out_linear
         }
 
     }
@@ -134,14 +175,24 @@ impl ModuleT for CharLevelNet {
                 token_outputs.push(out);
             }
 
-            // each output in outputs is of shape k * (batch_size, n_filters) => (batch_size, total_filters)
-            let token_outputs = Tensor::concat(&token_outputs, 1);
+            // each output in token_outputs is of shape k * (batch_size, n_filters) => (batch_size, total_filters)
+            let mut token_outputs = Tensor::concat(&token_outputs, 1);
+
+            // move through highways, remains (batch_size, total_filters)
+            for highway in &self.highways {
+                token_outputs = highway.forward_t(&token_outputs, train);
+            }
+
             outputs.push(token_outputs);
         }
 
         // (sequence_length, batch_size, total_filters) => (batch_size, sequence_length, total_filters)
         let outputs = Tensor::concat(&outputs, 0).reshape(&[*batch_size, *seq_length, -1]);
+
+        // move to linear out (batch_size, sequence_length, total_filters) => (batch_size, sequence_length, out_linear)
+        let outputs = outputs.apply(&self.out_linear);
         outputs
+
 
     }
 }

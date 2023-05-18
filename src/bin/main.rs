@@ -26,11 +26,13 @@ fn main() {
     let in_channels = char_embedding_dim;
     let out_channels = vec![10,20,30,40];
     let kernel_size = vec![2,3,4,5];
+    let highways = 2;
+    let char_level_out_dim = 512;
 
     let device = Device::cuda_if_available();
     println!("{:?}", &device);
     let vars = nn::VarStore::new(device);
-    let model = CharLevelNet::new(&vars.root(), vocab_size, char_embedding_dim, in_channels, out_channels, kernel_size);
+    let model = CharLevelNet::new(&vars.root(), vocab_size, char_embedding_dim, in_channels, out_channels, kernel_size, highways, char_level_out_dim);
 
     let xs = Tensor::ones(&[3, 9, max_len_token], (Kind::Int, Device::Cpu));
     let ys = Tensor::ones(&[3, 9, max_len_token], (Kind::Int, Device::Cpu));
