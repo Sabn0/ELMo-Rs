@@ -17,23 +17,23 @@ fn main() {
     let _n_samples = x.len() as i64;
     let vocab_size = 2;
     let _min_count = 1;
-    let _max_len_token = 10;
+    let max_len_token = 7;
     let _char_start = '$';
     let _char_end = '^';
     let _str_unk = "UNK";
     let batch_size = 1;
-    let char_embedding_dim = 10;
-    let in_channels = 1;
-    let out_channels = 3;
-    let kernel_size = 5;
+    let char_embedding_dim = 100;
+    let in_channels = char_embedding_dim;
+    let out_channels = vec![10,20,30,40];
+    let kernel_size = vec![2,3,4,5];
 
     let device = Device::cuda_if_available();
     println!("{:?}", &device);
     let vars = nn::VarStore::new(device);
     let model = CharLevelNet::new(&vars.root(), vocab_size, char_embedding_dim, in_channels, out_channels, kernel_size);
 
-    let xs = Tensor::ones(&[3,10], (Kind::Int, Device::Cpu));
-    let ys = Tensor::ones(&[3,10], (Kind::Int, Device::Cpu));
+    let xs = Tensor::ones(&[3, 9, max_len_token], (Kind::Int, Device::Cpu));
+    let ys = Tensor::ones(&[3, 9, max_len_token], (Kind::Int, Device::Cpu));
     let _opt = Adam::default().build(&vars, 1e-4).unwrap();
     
     let mut iter = Iter2::new(&xs, &ys, batch_size);
