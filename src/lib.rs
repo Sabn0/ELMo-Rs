@@ -7,7 +7,6 @@
 mod preprocessor;
 mod loader;
 mod model;
-mod config;
 mod trainer;
 
 pub use loader::data_loading::DatasetBuilder;

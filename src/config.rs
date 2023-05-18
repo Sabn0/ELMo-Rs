@@ -1,9 +1,9 @@
 use std::error::Error;
 
 
-struct config {}
+struct Config {}
 
-impl config {
+impl Config {
 
     fn new(args: &[String]) -> Result<Self, Box<dyn Error>> {
 

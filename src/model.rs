@@ -47,14 +47,14 @@ impl ModuleT for Highway {
 
 #[derive(Debug)]
 pub struct CharLevelNet {
-    embedding: nn::Linear,
+    embedding: nn::Embedding,
     conv_block: CnnBlock
 }
 
 impl CharLevelNet {
     pub fn new(vars: &nn::Path, vocab_size: i64, embedding_dim: i64, in_channels: i64, out_channels: i64, kernel_size: i64) -> Self {
 
-        let embedding = nn::linear(vars, vocab_size,  embedding_dim, Default::default());
+        let embedding = nn::embedding(vars, vocab_size,  embedding_dim, Default::default());
         let conv_block = CnnBlock::new(vars, in_channels, out_channels, kernel_size);
         
         Self {
@@ -73,7 +73,11 @@ impl ModuleT for CharLevelNet {
 
         // xs is of shape (batch_size, token_length)
         // xs expnsion: (batch_size, token_length) => (batch_size, token_length, embedding_dim)
+        println!("{:?}", xs);
+        println!("{:?}", xs.dim());
+        println!("{:?}", xs.internal_shape_as_tensor());
         let x = xs.apply(&self.embedding);
+        println!("{:?}", x.internal_shape_as_tensor());
         let out = self.conv_block.forward_t(&x, train);
         out
         
