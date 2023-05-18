@@ -13,4 +13,4 @@ pub use loader::data_loading::DatasetBuilder;
 pub use loader::data_loading::ELMoText;
 pub use loader::data_loading::Loader;
 pub use preprocessor::do_preprocess::Preprocessor;
-pub use model::CharLevelNet;
+pub use model::ELMo;

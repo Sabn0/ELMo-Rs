@@ -206,7 +206,7 @@ pub struct UniLM {
 }
 
 impl UniLM {
-    pub fn new(vars: &nn::Path, n_lstm_layers: i64, in_dim: i64, hidden_dim: i64, out_dim: i64) -> Self {
+    pub fn new(vars: &nn::Path, n_lstm_layers: i64, in_dim: i64, hidden_dim: i64) -> Self {
 
         let mut lstm_layers = Vec::new();
         for _ in 0..n_lstm_layers {
@@ -214,7 +214,7 @@ impl UniLM {
             lstm_layers.push(lm);
         }
 
-        let to_rep = nn::linear(vars, hidden_dim, out_dim, Default::default());
+        let to_rep = nn::linear(vars, hidden_dim, in_dim, Default::default());
 
         Self {
             lstm_layers: lstm_layers,
@@ -261,6 +261,77 @@ impl ModuleT for UniLM {
         // move n_lstm_layers * (batch_size, sequence_length, out_linear) =>  (n_lstm_layers, batch_size, sequence_length, out_linear)
         let outputs = Tensor::concat(&outputs, 0);
         outputs
+
+    }
+}
+
+#[derive(Debug)]
+pub struct ELMo {
+    forward_lm: UniLM,
+    backward_lm: UniLM,
+    to_vocab: nn::Linear,
+    n_lstm_layers: i64,
+    char_level: CharLevelNet
+}
+
+impl ELMo {
+    pub fn new(vars: &nn::Path, 
+        n_lstm_layers: i64, 
+        in_dim: i64, 
+        hidden_dim: i64,
+        vocab_size: i64,
+        token_vocab_size: i64,
+        char_embedding_dim: i64,
+        in_channels: i64,
+        out_channels: Vec<i64>,
+        kernel_size: Vec<i64>,
+        highways: i64
+    ) -> Self {
+
+        let char_level = CharLevelNet::new(vars, vocab_size, char_embedding_dim, in_channels, out_channels, kernel_size, highways, in_dim);
+        let forward_lm = UniLM::new(vars, n_lstm_layers, in_dim, hidden_dim);
+        let backward_lm = UniLM::new(vars, n_lstm_layers, in_dim, hidden_dim);
+        let to_vocab = nn::linear(vars, in_dim, token_vocab_size, Default::default());
+
+        Self {
+            forward_lm: forward_lm,
+            backward_lm: backward_lm,
+            to_vocab: to_vocab,
+            n_lstm_layers: n_lstm_layers,
+            char_level: char_level
+        }
+
+
+    }
+}
+
+impl ModuleT for ELMo {
+
+    fn forward_t(&self, xs: &Tensor, train: bool) -> Tensor {
+        
+        // xs is of shape (batch_size, sequence_length, token_length), batch_size = 1
+        // move through char enconding => (batch_size, sequence_length, out_linear)
+        let xs_embedded = &self.char_level.forward_t(xs, train);
+
+        // xs_embedded should be (batch_size, sequence_length, out_linear)
+        let xs_embedded_flip = Tensor::flip(&xs_embedded.to_owned().shallow_clone(), &[1]);
+
+        // both should be (n_lstm_layers, batch_size, sequence_length, out_linear)
+        let forward_lm_outs = self.forward_lm.forward_t(xs_embedded, train);
+        let backward_lm_outs = self.backward_lm.forward_t(&xs_embedded_flip, train);
+
+        // the elmo representation is a combination of all the outputs (2L) + xs
+        // for the simple case, I take the sum of xs and the two last outputs
+        let forward_last = forward_lm_outs.slice(0, self.n_lstm_layers-1, self.n_lstm_layers, 1);
+        let backward_last = backward_lm_outs.slice(0, self.n_lstm_layers-1, self.n_lstm_layers, 1);
+        
+        // all the representations most transfer to vocabulary size
+        let xs_embedded_out = xs_embedded.apply(&self.to_vocab);
+        let forward_out = forward_last.apply(&self.to_vocab);
+        let backward_out = backward_last.apply(&self.to_vocab);
+
+        let out = xs_embedded_out + forward_out + backward_out;
+        out // (batch_size, sequence_length, token_vocab_size)
 
     }
 }

@@ -6,7 +6,7 @@ use tch::Kind;
 use tch::Tensor;
 use tch::nn;
 use tch::data::Iter2;
-use elmo_trainer::CharLevelNet;
+use elmo_trainer::ELMo;
 use tch::nn::Adam;
 use tch::nn::ModuleT;
 use tch::nn::OptimizerConfig;
@@ -16,6 +16,7 @@ fn main() {
     let x: Vec<String> = Vec::new();
     let _n_samples = x.len() as i64;
     let vocab_size = 2;
+    let char_vocab_size = 5;
     let _min_count = 1;
     let max_len_token = 7;
     let _char_start = '$';
@@ -27,14 +28,25 @@ fn main() {
     let out_channels = vec![10,20,30,40];
     let kernel_size = vec![2,3,4,5];
     let highways = 2;
-    let char_level_out_dim = 512;
+    let in_dim = 512;
     let hidden_size = 4096;
     let lstm_layers = 2;
 
     let device = Device::cuda_if_available();
     println!("{:?}", &device);
     let vars = nn::VarStore::new(device);
-    let model = CharLevelNet::new(&vars.root(), vocab_size, char_embedding_dim, in_channels, out_channels, kernel_size, highways, char_level_out_dim);
+    let model = ELMo::new(
+        &vars.root(),
+        lstm_layers,
+        in_dim,
+        hidden_size,
+        char_vocab_size,
+        vocab_size, 
+        char_embedding_dim, 
+        in_channels, 
+        out_channels, 
+        kernel_size, 
+        highways);
 
     let xs = Tensor::ones(&[3, 9, max_len_token], (Kind::Int, Device::Cpu));
     let ys = Tensor::ones(&[3, 9, max_len_token], (Kind::Int, Device::Cpu));
