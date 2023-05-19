@@ -3,7 +3,7 @@ use std::iter::zip;
 use std::ops::Mul;
 
 use tch::{nn, Tensor};
-use tch::nn::{ModuleT, RNN, RNNConfig, Init};
+use tch::nn::{ModuleT, RNN};
 
 
 // If a word is of length k charachters, the convolution is What's described as
@@ -210,20 +210,8 @@ impl UniLM {
         let mut lstm_layers = Vec::new();
         for _ in 0..n_lstm_layers {
 
-            let rnn_config = RNNConfig { 
-                has_biases: true, 
-                num_layers: 1, 
-                dropout: 0.0,   // done in forward
-                batch_first: true, 
-                w_ih_init: Init::Const(0.0), 
-                w_hh_init: Init::Const(0.0),
-                b_ih_init: Some(Init::Const(0.0)),
-                b_hh_init: Some(Init::Const(0.0)),
-                train: true, 
-                bidirectional: false
-            };
-
-            let lm = nn::lstm(vars, in_dim, hidden_dim, rnn_config);
+            // default on rnn gives everything we need except for dropout, taken care in forward
+            let lm = nn::lstm(vars, in_dim, hidden_dim, Default::default());
             lstm_layers.push(lm);
         }
 
@@ -251,14 +239,16 @@ impl ModuleT for UniLM {
 
         for (j, lstm) in (&self.lstm_layers).iter().enumerate() {
 
+            outputs.push(out.shallow_clone());
+
+            // adding dropout at non-test time
             let out_lstm = lstm.seq(&out.dropout(self.dropout, train));
             out = out_lstm.0;
             
-            // out moves (batch_size, sequence_length, hidden_dim) => (batch_size, sequence_length, out_linear)
+            // out moves back to shape (batch_size, sequence_length, hidden_dim) => (batch_size, sequence_length, out_linear)
             out = out.apply(&self.to_rep);
 
-            outputs.push(out.shallow_clone());
-
+            // adding residual to out
             out += outputs[j].shallow_clone();
 
         }

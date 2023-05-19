@@ -13,6 +13,8 @@ use tch::nn::OptimizerConfig;
 
 fn main() {
 
+    // since this is a 1 batch, maybe removing it will be faster ...
+
     let x: Vec<String> = Vec::new();
     let _n_samples = x.len() as i64;
     let token_vocab_size = 2;
@@ -51,7 +53,7 @@ fn main() {
         dropout);
 
     let xs = Tensor::ones(&[3, 9, max_len_token], (Kind::Int, Device::Cpu));
-    let ys = Tensor::ones(&[3, 9], (Kind::Double, Device::Cpu));
+    let ys = Tensor::ones(&[3, 9], (Kind::Int, Device::Cpu));
     let mut opt = Adam::default().build(&vars, 1e-4).unwrap();
     
     let mut iter = Iter2::new(&xs, &ys, batch_size);
@@ -61,29 +63,17 @@ fn main() {
         // x of shape (batch_size, sequence_length, char_vocab_size)
         // y of shape (batch_size, sequence_length)
         // move throught training...
-        println!("{}", x.internal_shape_as_tensor());
-        println!("{}", y.internal_shape_as_tensor());
 
         let out = model.forward_t(&x, true);
         // out of shape (batch_Size, sequence_lngth, token_vocab_size)
-        println!("{}", out.internal_shape_as_tensor());
 
         // out and y should move to 2dim for cross entropy loss. This is another reason for batch_size =1...
         let out = out.reshape(&[-1, token_vocab_size]);
-        println!("what: {}", y.internal_shape_as_tensor());
-        let targets = y.reshape(&[-1]);
-        let targets_to_long = targets.totype(Kind::Int64);
-        println!("targets_to_long: {}", targets_to_long.internal_shape_as_tensor());
-        println!("out dim: {}", out.internal_shape_as_tensor());
-        println!("targets dim: {}", targets.internal_shape_as_tensor());
-        println!("aaa");
-        println!("targets {:?}", targets);
-
-        println!("out {:?}", out.print());
-        let loss = out.cross_entropy_for_logits(&targets_to_long);
+        let targets = y.reshape(&[-1]).totype(Kind::Int64);
+        let loss = out.cross_entropy_for_logits(&targets);
 
         opt.backward_step(&loss);
-        //let _acc = model.batch_accuracy_for_logits(&out, &targets_to_long, vars.device(), batch_size);
+        //let _acc = model.batch_accuracy_for_logits(&predictions, &targets_to_long, vars.device(), batch_size);
     }
 
     /* 
