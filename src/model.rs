@@ -2,8 +2,8 @@
 use std::iter::zip;
 use std::ops::Mul;
 
-use tch::{nn, Tensor, Device, Kind};
-use tch::nn::{ModuleT, RNN};
+use tch::{nn, Tensor};
+use tch::nn::{ModuleT, RNN, RNNConfig, Init};
 
 
 // If a word is of length k charachters, the convolution is What's described as
@@ -168,7 +168,6 @@ impl ModuleT for CharLevelNet {
 
             let xs_tokens: Tensor = xs.slice(1, s, s+1, 1); // should be (batch_size, 1, token_length)
             let x = xs_tokens.apply(&self.embedding); // should be (batch_size, 1, token_length, embedding_dim)
-
             let mut token_outputs = Vec::new();
             for conv_block in &self.conv_blocks {
                 let out = conv_block.forward_t(&x, train); // out is of shape (batch_size, n_filters)
@@ -202,15 +201,28 @@ impl ModuleT for CharLevelNet {
 pub struct UniLM {
     lstm_layers: Vec<nn::LSTM>,
     to_rep: nn::Linear,
-    hidden_dim: i64
+    dropout: f64
 }
 
 impl UniLM {
-    pub fn new(vars: &nn::Path, n_lstm_layers: i64, in_dim: i64, hidden_dim: i64) -> Self {
+    pub fn new(vars: &nn::Path, n_lstm_layers: i64, in_dim: i64, hidden_dim: i64, dropout: f64) -> Self {
 
         let mut lstm_layers = Vec::new();
         for _ in 0..n_lstm_layers {
-            let rnn_config = todo!();
+
+            let rnn_config = RNNConfig { 
+                has_biases: true, 
+                num_layers: 1, 
+                dropout: 0.0,   // done in forward
+                batch_first: true, 
+                w_ih_init: Init::Const(0.0), 
+                w_hh_init: Init::Const(0.0),
+                b_ih_init: Some(Init::Const(0.0)),
+                b_hh_init: Some(Init::Const(0.0)),
+                train: true, 
+                bidirectional: false
+            };
+
             let lm = nn::lstm(vars, in_dim, hidden_dim, rnn_config);
             lstm_layers.push(lm);
         }
@@ -220,7 +232,7 @@ impl UniLM {
         Self {
             lstm_layers: lstm_layers,
             to_rep: to_rep,
-            hidden_dim: hidden_dim
+            dropout: dropout
         }
 
 
@@ -229,26 +241,18 @@ impl UniLM {
 
 impl ModuleT for UniLM {
 
-    fn forward_t(&self, xs: &Tensor, _train: bool) -> Tensor {
+    fn forward_t(&self, xs: &Tensor, train: bool) -> Tensor {
         
         // xs should be (batch_size, sequence_length, out_linear)
-        let dims = xs.internal_shape_as_tensor();
-        let dims = Vec::<i64>::from(dims);
-        let batch_size = dims[0];
-
-        let h = Tensor::zeros(&[batch_size, self.hidden_dim], (Kind::Int, Device::Cpu));
-        let c = Tensor::zeros(&[batch_size, self.hidden_dim], (Kind::Int, Device::Cpu));
-        let mut state = nn::LSTMState((h, c));
         
         // need residual connections, so lstm out should be the same size of input
         let mut out = xs.to_owned().shallow_clone();
         let mut outputs = vec![xs.to_owned().shallow_clone()];
 
         for (j, lstm) in (&self.lstm_layers).iter().enumerate() {
-            
-            let out_lstm = lstm.seq_init(&out, &state);
+
+            let out_lstm = lstm.seq(&out.dropout(self.dropout, train));
             out = out_lstm.0;
-            state = out_lstm.1;
             
             // out moves (batch_size, sequence_length, hidden_dim) => (batch_size, sequence_length, out_linear)
             out = out.apply(&self.to_rep);
@@ -286,12 +290,13 @@ impl ELMo {
         in_channels: i64,
         out_channels: Vec<i64>,
         kernel_size: Vec<i64>,
-        highways: i64
+        highways: i64,
+        dropout: f64
     ) -> Self {
 
         let char_level = CharLevelNet::new(vars, vocab_size, char_embedding_dim, in_channels, out_channels, kernel_size, highways, in_dim);
-        let forward_lm = UniLM::new(vars, n_lstm_layers, in_dim, hidden_dim);
-        let backward_lm = UniLM::new(vars, n_lstm_layers, in_dim, hidden_dim);
+        let forward_lm = UniLM::new(vars, n_lstm_layers, in_dim, hidden_dim, dropout);
+        let backward_lm = UniLM::new(vars, n_lstm_layers, in_dim, hidden_dim, dropout);
         let to_vocab = nn::linear(vars, in_dim, token_vocab_size, Default::default());
 
         Self {

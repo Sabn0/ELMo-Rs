@@ -15,7 +15,7 @@ fn main() {
 
     let x: Vec<String> = Vec::new();
     let _n_samples = x.len() as i64;
-    let vocab_size = 2;
+    let token_vocab_size = 2;
     let char_vocab_size = 5;
     let _min_count = 1;
     let max_len_token = 7;
@@ -29,40 +29,61 @@ fn main() {
     let kernel_size = vec![2,3,4,5];
     let highways = 2;
     let in_dim = 512;
-    let hidden_size = 4096;
-    let lstm_layers = 2;
+    let hidden_dim = 4096;
+    let n_lstm_layers = 2;
+    let dropout = 0.0;
 
     let device = Device::cuda_if_available();
     println!("{:?}", &device);
     let vars = nn::VarStore::new(device);
     let model = ELMo::new(
         &vars.root(),
-        lstm_layers,
+        n_lstm_layers,
         in_dim,
-        hidden_size,
+        hidden_dim,
         char_vocab_size,
-        vocab_size, 
+        token_vocab_size, 
         char_embedding_dim, 
         in_channels, 
         out_channels, 
         kernel_size, 
-        highways);
+        highways, 
+        dropout);
 
     let xs = Tensor::ones(&[3, 9, max_len_token], (Kind::Int, Device::Cpu));
-    let ys = Tensor::ones(&[3, 9, max_len_token], (Kind::Int, Device::Cpu));
+    let ys = Tensor::ones(&[3, 9], (Kind::Double, Device::Cpu));
     let mut opt = Adam::default().build(&vars, 1e-4).unwrap();
     
     let mut iter = Iter2::new(&xs, &ys, batch_size);
 
     for (x, y) in iter.shuffle().into_iter().to_device(vars.device()) {
+
+        // x of shape (batch_size, sequence_length, char_vocab_size)
+        // y of shape (batch_size, sequence_length)
         // move throught training...
+        println!("{}", x.internal_shape_as_tensor());
+        println!("{}", y.internal_shape_as_tensor());
+
         let out = model.forward_t(&x, true);
-        // out and y should be both of shape (batch_size, sequence_length, vocab_size)
-        let loss = out.cross_entropy_for_logits(&y);
+        // out of shape (batch_Size, sequence_lngth, token_vocab_size)
+        println!("{}", out.internal_shape_as_tensor());
+
+        // out and y should move to 2dim for cross entropy loss. This is another reason for batch_size =1...
+        let out = out.reshape(&[-1, token_vocab_size]);
+        println!("what: {}", y.internal_shape_as_tensor());
+        let targets = y.reshape(&[-1]);
+        let targets_to_long = targets.totype(Kind::Int64);
+        println!("targets_to_long: {}", targets_to_long.internal_shape_as_tensor());
+        println!("out dim: {}", out.internal_shape_as_tensor());
+        println!("targets dim: {}", targets.internal_shape_as_tensor());
+        println!("aaa");
+        println!("targets {:?}", targets);
+
+        println!("out {:?}", out.print());
+        let loss = out.cross_entropy_for_logits(&targets_to_long);
 
         opt.backward_step(&loss);
-
-        let _acc = model.batch_accuracy_for_logits(&out, &y, vars.device(), batch_size);
+        //let _acc = model.batch_accuracy_for_logits(&out, &targets_to_long, vars.device(), batch_size);
     }
 
     /* 
