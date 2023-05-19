@@ -4,6 +4,8 @@
 pub mod training {
 
     use std::error::Error;
+    use std::fs::OpenOptions;
+    use std::io::prelude::*;
     use tch::{Tensor, Kind};
     use tch::data::Iter2;
     use tch::Device;
@@ -11,12 +13,31 @@ pub mod training {
     use crate::ELMo;
 
     pub trait TrainModel {
+        
         // train forces (x,y) labels for now (classification)
         fn train(&self, trainset_iter: &mut Iter2, devset_iter: &mut Option<Iter2>, learning_rate: f64, max_iter: i64, vocab_size: i64, model: &impl ModuleT) -> Result<(), Box<dyn Error>>;
-        fn validate();
-        fn predict(&self, targets: &Tensor, logits: &Tensor) -> f64;
+        fn validate(&self, devset_iter: &mut Iter2, model: &impl ModuleT, vocab_size: i64) -> (f64, f64);
+        fn step(&self, xs: Tensor, ys: Tensor, vocab_size: i64, model: &impl ModuleT, opt: Option<&mut Optimizer>, loss: &mut f64, accuracy: &mut f64);       fn predict(&self, targets: &Tensor, logits: &Tensor) -> f64;
         fn init_optimizer(&self, vars: &VarStore, learning_rate: f64) -> Optimizer;
         fn init_vars(&self) -> VarStore;
+        
+
+        fn log(&self, out_path: &str, items: Vec<String>) -> Result<(), Box<dyn Error>> {
+            
+            let out_string = items.join("\t");
+            //out_string += items.iter().map(|x| x.to_string()).collect::<Vec<String>>().join("\t");
+            let mut file = OpenOptions::new()
+            .write(true)
+            .append(true)
+            .open(out_path)?;
+            
+            writeln!(file, "{}", out_string)?;
+            Ok(())
+
+        }
+        fn break_early(&self, _epoch_loss: f64, _dev_loss: f64) -> bool {
+            false
+        } 
     }
 
     struct elmo_trainer {
@@ -34,7 +55,7 @@ pub mod training {
         }
 
         pub fn save() {
-            
+
         }
 
         pub fn run() {
@@ -46,36 +67,30 @@ pub mod training {
         
         fn train(&self, trainset_iter: &mut Iter2, devset_iter: &mut Option<Iter2>, learning_rate: f64, max_iter: i64, vocab_size: i64, model: &impl ModuleT) -> Result<(), Box<dyn Error>> {
             
-            let set_train = true;
             let vars = self.init_vars();
             let mut opt = self.init_optimizer(&vars, learning_rate);
 
             for _epoch in 0..max_iter {
 
-                let mut loss = 0;
-                let mut accuracy = 0.0;
+                let mut epoch_loss = 0.0;
+                let mut epoch_accuracy = 0.0;
 
                 for (xs, ys) in trainset_iter.shuffle().into_iter().to_device(vars.device()) {
 
                     // xs of shape (batch_size, sequence_length, char_vocab_size)
                     // ys of shape (batch_size, sequence_length)
                     
-                    let logits = model.forward_t(&xs, set_train); // move throught training...
-                    // logits of shape (batch_Size, sequence_lngth, token_vocab_size)
-
-                    // logits and y should move to 2dim for cross entropy loss. This is another reason for batch_size =1...
-                    let logits = logits.reshape(&[-1, vocab_size]);
-                    let targets = ys.reshape(&[-1]).totype(Kind::Int64);
-                    let batch_loss = logits.cross_entropy_for_logits(&targets);
-                    opt.backward_step(&batch_loss);
-
-                    loss += batch_loss.mean(Kind::Float).numel();
-                    accuracy += self.predict(&targets, &logits);
-
+                    self.step(xs, ys, vocab_size, model, Some(&mut opt), &mut epoch_loss, &mut epoch_accuracy);
                 }
 
                 if devset_iter.is_some() {
-                    todo!()
+
+                    let dev_iter = devset_iter.as_mut().unwrap();
+                    let (dev_loss, dev_accuracy) = self.validate(dev_iter, model, vocab_size);
+                    
+                    if self.break_early(epoch_loss, dev_loss) {
+                        break;
+                    }
                 }
 
 
@@ -86,10 +101,46 @@ pub mod training {
         
         }
 
+        fn step(&self, xs: Tensor, ys: Tensor, vocab_size: i64, model: &impl ModuleT, opt: Option<&mut Optimizer>, loss: &mut f64, accuracy: &mut f64) {
 
-        fn validate() {
-        todo!()
-    }
+            let train_mode = match &opt {
+                Some(_) => true,
+                None => false
+            };
+
+            let logits = model.forward_t(&xs, train_mode); // move throught model...
+            // logits of shape (batch_Size, sequence_lngth, token_vocab_size)
+
+            // logits and y should move to 2dim for cross entropy loss. This is another reason for batch_size =1...
+            let logits = logits.reshape(&[-1, vocab_size]);
+            let targets = ys.reshape(&[-1]).totype(Kind::Int64);
+            let batch_loss = logits.cross_entropy_for_logits(&targets);
+
+            if train_mode {
+                opt.unwrap().backward_step(&batch_loss);
+            }
+
+            *loss += <f64>::from(batch_loss.mean(Kind::Float));
+            *accuracy += self.predict(&targets, &logits);
+
+        }
+
+        fn validate(&self, devset_iter: &mut Iter2, model: &impl ModuleT, vocab_size: i64) -> (f64, f64) {
+
+            let mut loss = 0.0;
+            let mut accuracy = 0.0;
+
+            for (xs, ys) in devset_iter.shuffle().into_iter().to_device(self.device) {
+
+                // xs of shape (batch_size, sequence_length, char_vocab_size)
+                // ys of shape (batch_size, sequence_length)                
+                self.step(xs, ys, vocab_size, model, None, &mut loss, &mut accuracy);
+
+            }
+
+            (loss, accuracy)
+
+        }
 
         fn predict(&self, targets: &Tensor, logits: &Tensor) -> f64 {
 
