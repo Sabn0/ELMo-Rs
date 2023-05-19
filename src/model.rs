@@ -210,7 +210,8 @@ impl UniLM {
 
         let mut lstm_layers = Vec::new();
         for _ in 0..n_lstm_layers {
-            let lm = nn::lstm(vars, in_dim, hidden_dim, Default::default());
+            let rnn_config = todo!();
+            let lm = nn::lstm(vars, in_dim, hidden_dim, rnn_config);
             lstm_layers.push(lm);
         }
 
