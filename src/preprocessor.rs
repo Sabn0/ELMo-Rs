@@ -39,11 +39,11 @@ pub mod do_preprocess {
         }
     }
 
-    pub struct Preprocessor {}
+    pub struct Preprocessor;
 
     impl Preprocessor {
 
-        pub fn new() -> Self { Self { } }
+        pub fn new() -> Self { Self {} }
 
         // remove duplicated sentences, mutate the corpus in self
         fn unique(&self, sentences: &mut Vec<String>) {

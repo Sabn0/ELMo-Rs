@@ -27,7 +27,7 @@ pub struct JsonELMo {
     pub hidden_dim: i64,
     pub n_lstm_layers: i64,
     pub dropout: f64,
-    pub devide: Device,
+    pub device: Device,
     pub max_iter: i64,
     pub learning_rate: f64
 }
@@ -98,7 +98,7 @@ impl Conigure for ConfigElmo {
             dropout: 0.1,
             max_iter: 10,
             learning_rate: 0.001, //
-            devide: Device::cuda_if_available(),
+            device: Device::cuda_if_available(),
             char_start: '$',
             char_end: '^',
             str_unk: String::from("UNK"),
@@ -196,4 +196,34 @@ impl Conigure for ConfigElmo {
 
     }
     
+}
+
+
+pub mod files_handling {
+
+    use std::{io::{Lines, BufReader, self, BufRead}, fs::File, error::Error};
+
+    fn read_file(file_path: &str) -> Result<Lines<BufReader<File>>, Box<dyn Error>> {
+
+        match File::open(file_path) {
+            Ok(f) => Ok(io::BufReader::new(f).lines()),
+            Err(e) => Err(Box::new(e))
+        }
+    }
+
+    pub fn load_sentences(file_path: &str) -> Result<Vec<String>, Box<dyn Error>> {
+
+        let lines = read_file(file_path)?;        
+        let sentences = lines.into_iter().map(|line| parse_line(line.unwrap())).collect::<Vec<String>>();
+        Ok(sentences)
+    }
+
+    fn parse_line(line: String) -> String {
+
+        // line is a string of text, it is trimmed for trailing and ending spaces, lower cased.
+        // As default add end-of-sequence and start-of-sequence tokens, but can be set to false.
+        let line_str = [&line.trim().to_lowercase()].map(|x| x.to_string()).to_vec().join(" ");
+        line_str
+    }
+
 }
