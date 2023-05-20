@@ -120,16 +120,16 @@ impl Conigure for ConfigElmo {
 
         Self::Item {
             token_vocab_size: 300_000,
-            char_vocab_size: 128,
+            char_vocab_size: 262,
             min_count: 3,
             max_len_token: 50,
-            char_embedding_dim: 15,
+            char_embedding_dim: 16,
             in_channels: 1,
-            kernel_size: vec![1, 2], // small vec![1,2,3,4,5,6]
-            out_channels: vec![25, 50], // small vec![25,50,75,100,125,150]
+            kernel_size: vec![1, 2, 3, 4, 5, 6, 7],
+            out_channels: vec![32, 32, 64 ,128, 256, 512, 1024],
             highways: 1,
-            in_dim: 200, // small 512
-            hidden_dim: 400, // small 4096
+            in_dim: 128,
+            hidden_dim: 1024,
             n_lstm_layers: 2,
             dropout: 0.1,
             max_iter: 10,
