@@ -11,13 +11,13 @@ pub mod training {
     use tch::Device;
 
     use tch::nn::{VarStore, ModuleT, Optimizer, Adam, OptimizerConfig};
-    use crate::ELMo;
+    use crate::{ELMo, Loader};
 
     pub trait TrainModel {
         
         // train forces (x,y) labels for now (classification)
-        fn train(&self, trainset_iter: &mut Iter2, devset_iter: &mut Option<Iter2>, learning_rate: f64, max_iter: i64, vocab_size: i64, model: &impl ModuleT, vars: &mut VarStore) -> Result<(), Box<dyn Error>>;
-        fn validate(&self, devset_iter: &mut Iter2, model: &impl ModuleT, vocab_size: i64, device: Device) -> (f64, f64);
+        fn train(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, vocab_size: i64, model: &impl ModuleT, vars: &mut VarStore) -> Result<(), Box<dyn Error>>;
+        fn validate(&self, devset_iter: &mut Loader, model: &impl ModuleT, vocab_size: i64, device: Device) -> (f64, f64);
         fn step(&self, xs: Tensor, ys: Tensor, vocab_size: i64, model: &impl ModuleT, opt: Option<&mut Optimizer>, loss: &mut f64, accuracy: &mut f64, device: Device);       
         fn predict(&self, targets: &Tensor, logits: &Tensor, model: &impl ModuleT, device: Device) -> f64;
         fn init_optimizer(&self, vars: &VarStore, learning_rate: f64) -> Optimizer;
@@ -37,7 +37,7 @@ pub mod training {
 
         pub fn new() -> Self { Self {} }
 
-        pub fn run_training(&self, trainset_iter: &mut Iter2, devset_iter: &mut Option<Iter2>, learning_rate: f64, max_iter: i64, model: ELMo, vocab_size: i64, vars: &mut VarStore) -> Result<(), Box<dyn Error>> {
+        pub fn run_training(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, model: ELMo, vocab_size: i64, vars: &mut VarStore) -> Result<(), Box<dyn Error>> {
 
             self.train(trainset_iter, devset_iter, learning_rate, max_iter, vocab_size, &model, vars)?;
             Ok(())
@@ -51,7 +51,7 @@ pub mod training {
 
     impl TrainModel for ElmoTrainer {
         
-        fn train(&self, trainset_iter: &mut Iter2, devset_iter: &mut Option<Iter2>, learning_rate: f64, max_iter: i64, vocab_size: i64, model: &impl ModuleT, vars: &mut VarStore) -> Result<(), Box<dyn Error>> {
+        fn train(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, vocab_size: i64, model: &impl ModuleT, vars: &mut VarStore) -> Result<(), Box<dyn Error>> {
             
             let device = vars.device();
             let mut opt = self.init_optimizer(&vars, learning_rate);
@@ -65,7 +65,7 @@ pub mod training {
                 let mut epoch_loss = 0.0;
                 let mut epoch_accuracy = 0.0;
 
-                for (xs, ys) in trainset_iter.shuffle().into_iter().to_device(device) {
+                for (xs, ys) in trainset_iter.shuffle().into_iter() {
 
                     // xs of shape (batch_size, sequence_length, char_vocab_size)
                     // ys of shape (batch_size, sequence_length)
@@ -130,13 +130,14 @@ pub mod training {
 
         }
 
-        fn validate(&self, devset_iter: &mut Iter2, model: &impl ModuleT, vocab_size: i64, device: Device) -> (f64, f64) {
+        fn validate(&self, devset_iter: &mut Loader, model: &impl ModuleT, vocab_size: i64, device: Device) -> (f64, f64) {
 
             let mut loss = 0.0;
             let mut accuracy = 0.0;
 
-            for (xs, ys) in devset_iter.shuffle().into_iter().to_device(device) {
+            for (xs, ys) in devset_iter.shuffle().into_iter() {
 
+                // already in device
                 // xs of shape (batch_size, sequence_length, char_vocab_size)
                 // ys of shape (batch_size, sequence_length)                
                 self.step(xs, ys, vocab_size, model, None, &mut loss, &mut accuracy, device);

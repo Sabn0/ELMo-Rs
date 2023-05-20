@@ -6,6 +6,7 @@ use std::env;
 use elmo_trainer::ConfigElmo;
 use elmo_trainer::ELMoText;
 use elmo_trainer::Loader;
+use elmo_trainer::Splitter;
 use elmo_trainer::files_handling;
 use elmo_trainer::Preprocessor;
 use elmo_trainer::DatasetBuilder;
@@ -38,7 +39,8 @@ fn main() {
         params.char_start, 
         params.char_end,
         params.char_unk,
-        &params.str_unk);
+        &params.str_unk
+    );
 
     // update vocabs
     params.token_vocab_size = token2int.len() as i64;
@@ -54,8 +56,8 @@ fn main() {
         params.char_unk,
         params.str_unk.to_string());
 
-    let loader = Loader::new();
-    let splits: Vec<Tensor> = loader.get_split_train_dev_test_indices(n_samples);
+    let splitter = Splitter::new();
+    let splits: Vec<Tensor> = splitter.get_split_train_dev_test_indices(n_samples);
 
     let mut vars = nn::VarStore::new(params.device);
     let model = ELMo::new(
@@ -79,9 +81,9 @@ fn main() {
         let (xs, ys): (Vec<_>, Vec<_>) = indices.iter()
         .map(|i| elmo_text_loader.get_example(*i as usize).unwrap())
         .unzip();
-        let xs = Tensor::concat(&xs, 0);
-        let ys = Tensor::concat(&ys, 0);
-        Iter2::new(&xs, &ys, params.batch_size)
+
+        let loader = Loader::new(xs, ys, params.device);
+        loader
     });
     
     let mut trainset_iter = iters.next().unwrap();

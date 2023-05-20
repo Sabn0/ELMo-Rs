@@ -38,6 +38,7 @@ impl ModuleT for CnnBlock {
         // xs is of shape (batch_size, 1, token_length, embedding_dim)
         let dims = xs.internal_shape_as_tensor();
         let dims = Vec::<i64>::from(dims);
+        println!("{:?}", dims);
         assert!(4 == dims.len());
 
         let batch_size = dims[0];
@@ -161,6 +162,7 @@ impl ModuleT for CharLevelNet {
         let dims = Vec::<i64>::from(dims);
         let batch_size = &dims[0];
         let seq_length = &dims[1];
+        println!("{:?}", dims);
         
         // iterate over tokens
         let mut outputs = Vec::new();
@@ -274,7 +276,7 @@ impl ELMo {
         n_lstm_layers: i64, 
         in_dim: i64, 
         hidden_dim: i64,
-        vocab_size: i64,
+        char_vocab_size: i64,
         token_vocab_size: i64,
         char_embedding_dim: i64,
         in_channels: i64,
@@ -284,7 +286,7 @@ impl ELMo {
         dropout: f64
     ) -> Self {
 
-        let char_level = CharLevelNet::new(vars, vocab_size, char_embedding_dim, in_channels, out_channels, kernel_size, highways, in_dim);
+        let char_level = CharLevelNet::new(vars, char_vocab_size, char_embedding_dim, in_channels, out_channels, kernel_size, highways, in_dim);
         let forward_lm = UniLM::new(vars, n_lstm_layers, in_dim, hidden_dim, dropout);
         let backward_lm = UniLM::new(vars, n_lstm_layers, in_dim, hidden_dim, dropout);
         let to_vocab = nn::linear(vars, in_dim, token_vocab_size, Default::default());
@@ -304,6 +306,11 @@ impl ELMo {
 impl ModuleT for ELMo {
 
     fn forward_t(&self, xs: &Tensor, train: bool) -> Tensor {
+        
+        let dims = xs.internal_shape_as_tensor();
+        let dims = Vec::<i64>::from(dims);
+        println!("{:?}", dims);
+
         
         // xs is of shape (batch_size, sequence_length, token_length), batch_size = 1
         // move through char enconding => (batch_size, sequence_length, out_linear)
