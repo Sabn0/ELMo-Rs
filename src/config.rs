@@ -50,7 +50,8 @@ impl Display for JsonELMo {
         n_lstm_layers: {},
         device: {:?},
         max_iter: {},
-        learning_rate: {}",
+        learning_rate: {},
+        batch_size: {}",
         self.token_vocab_size,
         self.char_vocab_size, 
         self.min_count, 
@@ -65,7 +66,8 @@ impl Display for JsonELMo {
         self.n_lstm_layers, 
         self.device, 
         self.max_iter, 
-        self.learning_rate)
+        self.learning_rate,
+        self.batch_size)
     }
 }
 
@@ -133,13 +135,13 @@ impl Conigure for ConfigElmo {
             n_lstm_layers: 2,
             dropout: 0.1,
             max_iter: 10,
-            learning_rate: 0.001, // maybe different
+            batch_size: 1,
+            learning_rate: 0.2, // maybe different
             device: Device::cuda_if_available(),
             char_start: '$',
             char_end: '^',
             char_unk: '~',
             str_unk: String::from("UNK"),
-            batch_size: 1,
             corpus_file: corpus_file,
             output_dir: output_dir,
         }
@@ -216,6 +218,9 @@ impl Conigure for ConfigElmo {
         }
         if let Ok(max_iter) = validate_positive_int("max_iter") {
             params.max_iter = max_iter;
+        }
+        if let Ok(batch_size) = validate_positive_int("batch_size") {
+            params.batch_size = batch_size;
         }
         if let Ok(dropout) = validate_float("dropout") {
             params.dropout = dropout;

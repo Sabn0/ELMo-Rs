@@ -9,7 +9,6 @@ pub mod training {
     use std::time::Instant;
     use tch::{Tensor, Kind};
     use tch::data::Iter2;
-
     use tch::nn::{VarStore, ModuleT, Optimizer, Adam, OptimizerConfig};
     use crate::{ELMo, Loader};
 
@@ -101,7 +100,7 @@ pub mod training {
                 // print progress
                 println!("{}", progress_entry);
                 train_progress = train_progress.add(progress_entry);
-                
+
             }
 
             // save model?
