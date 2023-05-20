@@ -8,7 +8,6 @@ pub mod training {
     use std::ops::Add;
     use tch::{Tensor, Kind};
     use tch::data::Iter2;
-    use tch::Device;
 
     use tch::nn::{VarStore, ModuleT, Optimizer, Adam, OptimizerConfig};
     use crate::{ELMo, Loader};
@@ -17,9 +16,9 @@ pub mod training {
         
         // train forces (x,y) labels for now (classification)
         fn train(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, vocab_size: i64, model: &impl ModuleT, vars: &mut VarStore) -> Result<(), Box<dyn Error>>;
-        fn validate(&self, devset_iter: &mut Loader, model: &impl ModuleT, vocab_size: i64, device: Device) -> (f64, f64);
-        fn step(&self, xs: Tensor, ys: Tensor, vocab_size: i64, model: &impl ModuleT, opt: Option<&mut Optimizer>, loss: &mut f64, accuracy: &mut f64, device: Device);       
-        fn predict(&self, targets: &Tensor, logits: &Tensor, model: &impl ModuleT, device: Device) -> f64;
+        fn validate(&self, devset_iter: &mut Loader, model: &impl ModuleT, vocab_size: i64) -> (f64, f64);
+        fn step(&self, xs: Tensor, ys: Tensor, vocab_size: i64, model: &impl ModuleT, opt: Option<&mut Optimizer>, loss: &mut f64, accuracy: &mut f64);       
+        fn predict(&self, targets: &Tensor, logits: &Tensor) -> f64;
         fn init_optimizer(&self, vars: &VarStore, learning_rate: f64) -> Optimizer;
         
         fn break_early(&self, _epoch_loss: f64, _dev_loss: f64) -> bool { 
@@ -53,7 +52,6 @@ pub mod training {
         
         fn train(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, vocab_size: i64, model: &impl ModuleT, vars: &mut VarStore) -> Result<(), Box<dyn Error>> {
             
-            let device = vars.device();
             let mut opt = self.init_optimizer(&vars, learning_rate);
             let mut train_progress = match devset_iter {
                 Some(_) => TrainingProgress::init_with_dev(),
@@ -62,6 +60,7 @@ pub mod training {
             
             for epoch in 0..max_iter {
 
+                let mut total = 0.0;
                 let mut epoch_loss = 0.0;
                 let mut epoch_accuracy = 0.0;
 
@@ -69,11 +68,16 @@ pub mod training {
 
                     // xs of shape (batch_size, sequence_length, char_vocab_size)
                     // ys of shape (batch_size, sequence_length)
-                    
-                    self.step(xs, ys, vocab_size, model, Some(&mut opt), &mut epoch_loss, &mut epoch_accuracy, device);
+                    self.step(xs, ys, vocab_size, model, Some(&mut opt), &mut epoch_loss, &mut epoch_accuracy);
+                    total += 1.0;
                 }
 
+                trainset_iter.reset_index();
+
                 // update training progress
+                epoch_loss /= total;
+                epoch_accuracy /= total;
+
                 let mut progress_entry = TrainingProgress {
                     epoch: vec![epoch], epoch_loss: vec![epoch_loss], epoch_accuracy: vec![epoch_accuracy], dev_loss: None, dev_accuracy: None 
                 };
@@ -82,7 +86,7 @@ pub mod training {
                 if devset_iter.is_some() {
 
                     let dev_iter = devset_iter.as_mut().unwrap();
-                    let (dev_loss, dev_accuracy) = self.validate(dev_iter, model, vocab_size, device);
+                    let (dev_loss, dev_accuracy) = self.validate(dev_iter, model, vocab_size);
                     progress_entry.dev_loss = Some(vec![dev_accuracy]);
                     progress_entry.dev_accuracy = Some(vec![dev_accuracy]);
 
@@ -106,7 +110,7 @@ pub mod training {
         
         }
 
-        fn step(&self, xs: Tensor, ys: Tensor, vocab_size: i64, model: &impl ModuleT, opt: Option<&mut Optimizer>, loss: &mut f64, accuracy: &mut f64, device: Device) {
+        fn step(&self, xs: Tensor, ys: Tensor, vocab_size: i64, model: &impl ModuleT, opt: Option<&mut Optimizer>, loss: &mut f64, accuracy: &mut f64) {
 
             let train_mode = match &opt {
                 Some(_) => true,
@@ -125,13 +129,14 @@ pub mod training {
                 opt.unwrap().backward_step(&batch_loss);
             }
 
-            *loss += <f64>::from(batch_loss.mean(Kind::Float));
-            *accuracy += self.predict(&targets, &logits, model, device);
+            *loss += <f64>::from(batch_loss.sum(Kind::Float));
+            *accuracy += self.predict(&targets, &logits);
 
         }
 
-        fn validate(&self, devset_iter: &mut Loader, model: &impl ModuleT, vocab_size: i64, device: Device) -> (f64, f64) {
+        fn validate(&self, devset_iter: &mut Loader, model: &impl ModuleT, vocab_size: i64) -> (f64, f64) {
 
+            let mut total = 0.0;
             let mut loss = 0.0;
             let mut accuracy = 0.0;
 
@@ -140,25 +145,23 @@ pub mod training {
                 // already in device
                 // xs of shape (batch_size, sequence_length, char_vocab_size)
                 // ys of shape (batch_size, sequence_length)                
-                self.step(xs, ys, vocab_size, model, None, &mut loss, &mut accuracy, device);
-
+                self.step(xs, ys, vocab_size, model, None, &mut loss, &mut accuracy);
+                total += 1.0;
             }
 
-            (loss, accuracy)
+            devset_iter.reset_index();
+            (loss / total, accuracy / total)
 
         }
 
-        fn predict(&self, targets: &Tensor, logits: &Tensor, model: &impl ModuleT, device: Device) -> f64 {
+        fn predict(&self, targets: &Tensor, logits: &Tensor) -> f64 {
 
             // targets are of shape (batch_size * sequence_length)
             // logits are of shape (batch_size * sequence_length, vocab_size)
-            let dims = targets.internal_shape_as_tensor();
-            let dims = Vec::<i64>::from(dims);
-            let n_samples = dims[0];
 
             // create predictions from logits based on argmax
             let predictions = logits.argmax(1, false);
-            let accuracy = model.batch_accuracy_for_logits(&predictions, &targets, device, n_samples);
+            let accuracy = predictions.eq_tensor(targets).sum(Kind::Float).double_value(&[]);
             accuracy
         }
 

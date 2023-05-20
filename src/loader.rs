@@ -34,13 +34,18 @@ pub mod data_loading {
             }
         }
 
+        pub fn reset_index(&mut self) {
+            self.current_index = -1;
+        }
+
         pub fn shuffle(&mut self) -> &mut Loader {
 
-            let n_samples = self.xs.len() as i64;
-            let permutation = Vec::<i64>::from(Tensor::randperm(n_samples, (Kind::Int64, self.device)));
+            let n_samples = self.xs.len();
+            let permutation = Vec::<i64>::from(Tensor::randperm(n_samples as i64, (Kind::Int64, self.device)));
 
             self.xs = (&permutation).into_iter().map(|i| self.xs.get(*i as usize).unwrap().shallow_clone()).collect::<Vec<Tensor>>();
             self.ys = (&permutation).into_iter().map(|i| self.ys.get(*i as usize).unwrap().shallow_clone()).collect::<Vec<Tensor>>();
+            assert!(self.xs.len() == n_samples);
             self
         }
     }
@@ -49,7 +54,12 @@ pub mod data_loading {
         type Item = (Tensor, Tensor);
 
         fn next(&mut self) -> Option<Self::Item> {
+            
             self.current_index += 1;
+            if self.current_index >= self.xs.len() as i64 {
+                return None
+            }
+
             let x = self.xs.get(self.current_index as usize).unwrap().shallow_clone().to_device(self.device);
             let y = self.ys.get(self.current_index as usize).unwrap().shallow_clone().to_device(self.device);
             Some((x, y))

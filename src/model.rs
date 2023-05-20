@@ -3,7 +3,7 @@ use std::iter::zip;
 use std::ops::Mul;
 
 use tch::{nn, Tensor};
-use tch::nn::{ModuleT, RNN};
+use tch::nn::{ModuleT, RNN, ConvConfigND};
 
 
 // If a word is of length k charachters, the convolution is What's described as
@@ -12,16 +12,17 @@ use tch::nn::{ModuleT, RNN};
 // and w is the size of the kernal. The multiplication is done as a dot product.
 #[derive(Debug)]
 pub struct CnnBlock {
-    conv: nn::Conv1D,
+    conv: nn::Conv<[i64; 2]>,
     kernel_size: i64
 }
 
 impl CnnBlock {
-    fn new(vars: &nn::Path, in_channels: i64, out_channels: i64, kernel_size: i64) -> Self {
+    fn new(vars: &nn::Path, in_channels: i64, out_channels: i64, kernel_size: i64, embedding_dim: i64) -> Self {
 
         // handling embedding dim d as input channels.
         // hadnling number of filters h as output channels.
-        let conv = nn::conv1d(vars, in_channels, out_channels, kernel_size, Default::default());
+        let conv = nn::conv(vars, in_channels, out_channels, [embedding_dim, kernel_size], ConvConfigND::default());
+        //let conv = nn::conv1d(vars, in_channels, out_channels, kernel_size, Default::default());
         let kernel_size = kernel_size;
 
         Self {
@@ -38,7 +39,6 @@ impl ModuleT for CnnBlock {
         // xs is of shape (batch_size, 1, token_length, embedding_dim)
         let dims = xs.internal_shape_as_tensor();
         let dims = Vec::<i64>::from(dims);
-        println!("{:?}", dims);
         assert!(4 == dims.len());
 
         let batch_size = dims[0];
@@ -46,16 +46,17 @@ impl ModuleT for CnnBlock {
         let embedding_dim = dims[3];
         let pool_kernel: i64 = token_length - self.kernel_size + 1;
 
-        // xs reshape : (batch_size, token_length, embedding_dim) => (batch_size, embedding_dim, token_length)
-        let xs = xs.reshape(&[batch_size, embedding_dim, token_length]);
+        // xs reshape : (batch_size, token_length, embedding_dim) => (batch_size, 1, embedding_dim, token_length)
+        let xs = xs.reshape(&[batch_size, 1, embedding_dim, token_length]);
 
         // denote token_length = l, out_channels = h = number of filters, kernel_size = w, embedding_dim = d
-        // self.conv.w is of shape (h, d, w)
-        // conv does (h,d,w) * (batch_size, d, l) => (batch_size, h, l-w+1)
+        // self.conv.w is of shape (h, 1, d, w)
+        // conv does (h, 1, d, w) * (batch_size, 1, d, l) => (batch_size, h, 1, l-w+1)
         let conv_out = xs.apply(&self.conv);
 
-        // tanh doesn't change dims, (batch_size, h, l-w+1)
-        let act_out = conv_out.tanh();
+        // tanh doesn't change dims, (batch_size, h, 1, l-w+1), then move to (batch_size, h, l-w+1)
+        assert!(Vec::<i64>::from(conv_out.internal_shape_as_tensor())[2] == 1);
+        let act_out = conv_out.tanh().squeeze_dim(2);
          
          // max_pool1d moves xs : (batch_size, h, l-w+1) => (batch_size, h, 1)
         let pool_out = act_out.max_pool1d(&[pool_kernel], &[1], &[0], &[1], false);
@@ -126,7 +127,7 @@ impl CharLevelNet {
         let embedding = nn::embedding(vars, vocab_size,  embedding_dim, Default::default());
         let mut conv_blocks = Vec::new();
         for (out_channel, kernel_size) in zip(&out_channels, kernel_size) {
-            let conv_block = CnnBlock::new(vars, in_channels, *out_channel, kernel_size);
+            let conv_block = CnnBlock::new(vars, in_channels, *out_channel, kernel_size, embedding_dim);
             conv_blocks.push(conv_block);
         }
 
@@ -162,7 +163,6 @@ impl ModuleT for CharLevelNet {
         let dims = Vec::<i64>::from(dims);
         let batch_size = &dims[0];
         let seq_length = &dims[1];
-        println!("{:?}", dims);
         
         // iterate over tokens
         let mut outputs = Vec::new();
@@ -306,11 +306,6 @@ impl ELMo {
 impl ModuleT for ELMo {
 
     fn forward_t(&self, xs: &Tensor, train: bool) -> Tensor {
-        
-        let dims = xs.internal_shape_as_tensor();
-        let dims = Vec::<i64>::from(dims);
-        println!("{:?}", dims);
-
         
         // xs is of shape (batch_size, sequence_length, token_length), batch_size = 1
         // move through char enconding => (batch_size, sequence_length, out_linear)

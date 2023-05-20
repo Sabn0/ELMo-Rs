@@ -13,7 +13,6 @@ use elmo_trainer::DatasetBuilder;
 use elmo_trainer::training::ElmoTrainer;
 use tch::Tensor;
 use tch::nn;
-use tch::data::Iter2;
 use elmo_trainer::ELMo;
 
 fn main() {
@@ -21,7 +20,7 @@ fn main() {
     // since this is a 1 batch, maybe removing it will be faster ...
 
     println!("entering program...");
-    let args: Vec<String> = env::args().collect();
+    let _args: Vec<String> = env::args().collect();
 
     let args = vec!["".to_string(), "args.json".to_string()];
     println!("building parameters...");
@@ -44,7 +43,9 @@ fn main() {
 
     // update vocabs
     params.token_vocab_size = token2int.len() as i64;
+    println!("working on token vocab : {}", params.token_vocab_size);
     params.char_vocab_size = char2int.len() as i64;
+    println!("working on char vocab : {}", params.char_vocab_size);
 
     let n_samples = (&sentences).len() as i64;
     let elmo_text_loader = ELMoText::new(sentences, 
@@ -82,8 +83,7 @@ fn main() {
         .map(|i| elmo_text_loader.get_example(*i as usize).unwrap())
         .unzip();
 
-        let loader = Loader::new(xs, ys, params.device);
-        loader
+        Loader::new(xs, ys, params.device)
     });
     
     let mut trainset_iter = iters.next().unwrap();

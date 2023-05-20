@@ -89,16 +89,16 @@ impl Conigure for ConfigElmo {
             min_count: 3,
             max_len_token: 50,
             char_embedding_dim: 15,
-            in_channels: 1, // maybe char_embedding_dim
-            out_channels: vec![1,2,3,4,5,6], // small
-            kernel_size: vec![25,50,75,100,125,150], // small
+            in_channels: 1, // maybe 
+            kernel_size: vec![1, 2], // small vec![1,2,3,4,5,6]
+            out_channels: vec![25, 50], // small vec![25,50,75,100,125,150]
             highways: 1,
-            in_dim: 512,
-            hidden_dim: 4096,
+            in_dim: 200, // small 512
+            hidden_dim: 400, // small 4096
             n_lstm_layers: 2,
             dropout: 0.1,
             max_iter: 10,
-            learning_rate: 0.001, //
+            learning_rate: 0.001, // maybe different
             device: Device::cuda_if_available(),
             char_start: '$',
             char_end: '^',
