@@ -3,7 +3,7 @@
 
 use serde_json::Value;
 use tch::Device;
-use std::{fs::{self}, error::Error};
+use std::{fs::{self}, error::Error, fmt::Display};
 
 
 #[derive(Clone, Debug)]
@@ -33,6 +33,41 @@ pub struct JsonELMo {
     pub learning_rate: f64
 }
 
+impl Display for JsonELMo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "using hyper-params:
+        token_vocab_size: {}
+        char_vocab_size: {}
+        min_count: {}
+        max_len_token: {}
+        char_embedding_dim: {},
+        in_channels: {},
+        out_channels: {:?},
+        kernel_size: {:?},
+        highways: {},
+        in_dim: {},
+        hidden_dim: {},
+        n_lstm_layers: {},
+        device: {:?},
+        max_iter: {},
+        learning_rate: {}",
+        self.token_vocab_size,
+        self.char_vocab_size, 
+        self.min_count, 
+        self.max_len_token, 
+        self.char_embedding_dim, 
+        self.in_channels, 
+        self.out_channels, 
+        self.kernel_size, 
+        self.highways, 
+        self.in_dim, 
+        self.hidden_dim, 
+        self.n_lstm_layers, 
+        self.device, 
+        self.max_iter, 
+        self.learning_rate)
+    }
+}
 
 // validation of input arguments
 pub struct ConfigElmo {

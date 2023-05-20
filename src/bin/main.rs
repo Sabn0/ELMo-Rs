@@ -28,7 +28,7 @@ fn main() {
         Ok(config) => config.get_params(),
         Err(e) => panic!("{}", e)
     };
-    println!("using: {:?}", params);
+    println!("{}", params);
 
     let mut sentences = files_handling::load_sentences(&params.corpus_file).unwrap();
     let mut preprocessor = Preprocessor::new();
