@@ -14,26 +14,26 @@ pub mod do_preprocess {
 
     pub trait CollectT {
         type Item;
-        fn collect_gen(elements: Vec<Self::Item>) -> HashMap<Self::Item, u8>;
+        fn collect_gen(elements: Vec<Self::Item>) -> HashMap<Self::Item, usize>;
     }
     impl CollectT for char {
         type Item = Self;
-        fn collect_gen(elements: Vec<Self::Item>) -> HashMap<Self::Item, u8> {
-            let x: HashMap<char, u8> = elements.
+        fn collect_gen(elements: Vec<Self::Item>) -> HashMap<Self::Item, usize> {
+            let x: HashMap<char, usize> = elements.
             into_iter()
             .enumerate()
-            .map(|(i, e)| (e, i as u8))
+            .map(|(i, e)| (e, i as usize))
             .collect();
             x
         }
     }
     impl CollectT for String {
         type Item = Self;
-        fn collect_gen(elements: Vec<Self::Item>) -> HashMap<Self::Item, u8> {
-            let x: HashMap<String, u8> = elements.
+        fn collect_gen(elements: Vec<Self::Item>) -> HashMap<Self::Item, usize> {
+            let x: HashMap<String, usize> = elements.
             into_iter()
             .enumerate()
-            .map(|(i, e)| (e, i as u8))
+            .map(|(i, e)| (e, i as usize))
             .collect();
             x
         }
@@ -53,10 +53,12 @@ pub mod do_preprocess {
 
         // uses the counter to get a vocabulary of words
         fn count_tokens(&self, sentences: &Vec<String>, vocab_size: usize, min_count: usize, str_unk: &str) -> Vec<String> {
+
+            println!("counting from {} sentences", sentences.len());
             let chunk = sentences.join(" ");
-            let token2count: Counter<String, i8> = chunk.split_whitespace().map(|x| x.to_string()).collect();
+            let token2count = chunk.split_whitespace().map(|x| x.to_string()).collect::<Counter<_>>();
             let mut tokens = token2count.k_most_common_ordered(vocab_size);
-            tokens.push((String::from(str_unk), tokens.len() as i8));
+            tokens.push((String::from(str_unk), tokens.len()));
             let tokens = tokens
             .into_iter()
             .filter(|(_, c)| *c as usize >= min_count)
@@ -66,11 +68,11 @@ pub mod do_preprocess {
         }
 
         // uses the counter to get a vector of unique chars
-        fn count_chars(&self, vocab: &Vec<String>, char_start: char, char_end: char) -> Vec<char> {
+        fn count_chars(&self, vocab: &Vec<String>, char_start: char, char_end: char, char_unk: char) -> Vec<char> {
             let char_chunk = vocab.join("");
-            let mut char2count: Counter<char, i8> = char_chunk.chars().collect();
+            let mut char2count = char_chunk.chars().collect::<Counter<_>>();
             let n = char2count.len();
-            char2count.extend([(char_start, n as i8), (char_end, 1 + n as i8)]);
+            char2count.extend([(char_start, n as usize), (char_end, 1 + n as usize), (char_unk, 2 + n as usize)]);
             let chars = char2count.into_iter().map(|(c, _)| c).collect::<Vec<char>>();
             chars
         }
@@ -81,8 +83,9 @@ pub mod do_preprocess {
              min_count: usize,
              char_start: char,
              char_end: char,
+             char_unk: char,
              str_unk: &str
-        ) -> (HashMap<String, u8>, HashMap<char, u8>) {
+        ) -> (HashMap<String, usize>, HashMap<char, usize>) {
 
             // strip duplicated sentences
             self.unique(sentences);
@@ -90,18 +93,18 @@ pub mod do_preprocess {
             // pad sentences with SOS + EOS
             sentences.iter_mut().for_each(|s| { // filtering future EOT and SOT chars
                 *s = s.trim_matches(' ').to_string(); // remove leading and trailing spaces
-                *s = s.chars().filter(|x| x != &char_start && x != &char_end).collect::<String>();
+                *s = s.chars().filter(|x| x != &char_start && x != &char_end && x != &char_unk).collect::<String>();
                 *s = "SOS ".to_string() + s;
                 *s += " EOS";
             });
 
             // create vocabulary of words
             let tokens = self.count_tokens(&sentences, vocab_size, min_count, str_unk);
-            let token2int: HashMap<String, u8> = <String as CollectT>::collect_gen(tokens);
+            let token2int: HashMap<String, usize> = <String as CollectT>::collect_gen(tokens);
 
             // create vocabulary of chars
-            let chars = self.count_chars(&sentences, char_start, char_end);
-            let char2int: HashMap<char, u8> = <char as CollectT>::collect_gen(chars);
+            let chars = self.count_chars(&sentences, char_start, char_end, char_unk);
+            let char2int: HashMap<char, usize> = <char as CollectT>::collect_gen(chars);
 
             // token2int is bound with vocab_size tokens, minimum occurrences of min count. It countains and SOS,
             // EOS and UNK tokens. 
