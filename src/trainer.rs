@@ -129,7 +129,7 @@ pub mod training {
                 opt.unwrap().backward_step(&batch_loss);
             }
 
-            *loss += <f64>::from(batch_loss.sum(Kind::Float));
+            *loss += <f64>::from(batch_loss.mean(Kind::Float));
             *accuracy += self.predict(&targets, &logits);
 
         }
@@ -161,7 +161,8 @@ pub mod training {
 
             // create predictions from logits based on argmax
             let predictions = logits.argmax(1, false);
-            let accuracy = predictions.eq_tensor(targets).sum(Kind::Float).double_value(&[]);
+            let compare = predictions.eq_tensor(targets);
+            let accuracy = compare.mean(Kind::Float).double_value(&[]);
             accuracy
         }
 
