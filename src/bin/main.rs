@@ -17,8 +17,6 @@ use elmo_trainer::ELMo;
 
 fn main() {
 
-    // since this is a 1 batch, maybe removing it will be faster ...
-
     println!("entering program...");
     let _args: Vec<String> = env::args().collect();
 
