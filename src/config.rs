@@ -124,7 +124,7 @@ impl Conigure for ConfigElmo {
             min_count: 3,
             max_len_token: 50,
             char_embedding_dim: 15,
-            in_channels: 1, // maybe 
+            in_channels: 1,
             kernel_size: vec![1, 2], // small vec![1,2,3,4,5,6]
             out_channels: vec![25, 50], // small vec![25,50,75,100,125,150]
             highways: 1,
