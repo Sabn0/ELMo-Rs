@@ -4,11 +4,13 @@
 //! 
 
 
+mod config;
 mod preprocessor;
 mod loader;
 mod model;
 mod trainer;
 
+pub use config::ConfigElmo;
 pub use loader::data_loading::DatasetBuilder;
 pub use loader::data_loading::ELMoText;
 pub use loader::data_loading::Loader;
