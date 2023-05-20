@@ -87,7 +87,7 @@ pub mod training {
 
                     let dev_iter = devset_iter.as_mut().unwrap();
                     let (dev_loss, dev_accuracy) = self.validate(dev_iter, model, vocab_size);
-                    progress_entry.dev_loss = Some(vec![dev_accuracy]);
+                    progress_entry.dev_loss = Some(vec![dev_loss]);
                     progress_entry.dev_accuracy = Some(vec![dev_accuracy]);
 
                     if self.break_early(epoch_loss, dev_loss) {
