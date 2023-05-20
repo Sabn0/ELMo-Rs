@@ -97,7 +97,7 @@ pub mod training {
                 }
 
                 // print progress
-                println!("{:?}", progress_entry);
+                println!("{}", progress_entry);
                 train_progress = train_progress.add(progress_entry);
 
 
@@ -259,7 +259,7 @@ pub mod training {
             let mut to_print = format!("epoch: {}, train loss: {}, train acc: {}, ", epoch, epoch_loss, epoch_acc);
 
             if let Some(dev_loss) = &self.dev_loss {
-                to_print += &format!("dev loss: {}", dev_loss.get(n-1).unwrap());
+                to_print += &format!("dev loss: {}, ", dev_loss.get(n-1).unwrap());
             }
 
             if let Some(dev_accuracy) = &self.dev_accuracy {
