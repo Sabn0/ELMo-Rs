@@ -4,43 +4,37 @@
 pub mod training {
 
     use std::error::Error;
+    use std::fmt::Display;
     use std::fs::OpenOptions;
     use std::io::prelude::*;
+    use std::ops::Add;
     use tch::{Tensor, Kind};
     use tch::data::Iter2;
     use tch::Device;
+
     use tch::nn::{VarStore, ModuleT, Optimizer, Adam, OptimizerConfig};
     use crate::ELMo;
 
     pub trait TrainModel {
         
         // train forces (x,y) labels for now (classification)
-        fn train(&self, trainset_iter: &mut Iter2, devset_iter: &mut Option<Iter2>, learning_rate: f64, max_iter: i64, vocab_size: i64, model: &impl ModuleT) -> Result<(), Box<dyn Error>>;
+        fn train(&self, trainset_iter: &mut Iter2, devset_iter: &mut Option<Iter2>, learning_rate: f64, max_iter: i64, vocab_size: i64, model: &impl ModuleT) -> Result<VarStore, Box<dyn Error>>;
         fn validate(&self, devset_iter: &mut Iter2, model: &impl ModuleT, vocab_size: i64) -> (f64, f64);
-        fn step(&self, xs: Tensor, ys: Tensor, vocab_size: i64, model: &impl ModuleT, opt: Option<&mut Optimizer>, loss: &mut f64, accuracy: &mut f64);       fn predict(&self, targets: &Tensor, logits: &Tensor) -> f64;
+        fn step(&self, xs: Tensor, ys: Tensor, vocab_size: i64, model: &impl ModuleT, opt: Option<&mut Optimizer>, loss: &mut f64, accuracy: &mut f64);       
+        fn predict(&self, targets: &Tensor, logits: &Tensor) -> f64;
         fn init_optimizer(&self, vars: &VarStore, learning_rate: f64) -> Optimizer;
         fn init_vars(&self) -> VarStore;
         
-
-        fn log(&self, out_path: &str, items: Vec<String>) -> Result<(), Box<dyn Error>> {
-            
-            let out_string = items.join("\t");
-            //out_string += items.iter().map(|x| x.to_string()).collect::<Vec<String>>().join("\t");
-            let mut file = OpenOptions::new()
-            .write(true)
-            .append(true)
-            .open(out_path)?;
-            
-            writeln!(file, "{}", out_string)?;
-            Ok(())
-
+        fn break_early(&self, _epoch_loss: f64, _dev_loss: f64) -> bool { 
+            false 
         }
-        fn break_early(&self, _epoch_loss: f64, _dev_loss: f64) -> bool {
-            false
-        } 
+        
+        fn save_model(&self, out_path: &str, vars: &VarStore) -> Result<(), Box<dyn Error>> {
+            Ok(vars.save(out_path)?)
+        }
     }
 
-    struct elmo_trainer {
+    struct ElmoTrainer {
         trainset: Iter2,
         devset_iter: Option<Iter2>,
         learning_rate: f64,
@@ -49,28 +43,30 @@ pub mod training {
         device: Device
     }
 
-    impl elmo_trainer {
+    impl ElmoTrainer {
+
         pub fn new() -> Self {
             todo!()
-        }
-
-        pub fn save() {
-
         }
 
         pub fn run() {
 
         }
+
     }
 
-    impl TrainModel for elmo_trainer {
+    impl TrainModel for ElmoTrainer {
         
-        fn train(&self, trainset_iter: &mut Iter2, devset_iter: &mut Option<Iter2>, learning_rate: f64, max_iter: i64, vocab_size: i64, model: &impl ModuleT) -> Result<(), Box<dyn Error>> {
+        fn train(&self, trainset_iter: &mut Iter2, devset_iter: &mut Option<Iter2>, learning_rate: f64, max_iter: i64, vocab_size: i64, model: &impl ModuleT) -> Result<VarStore, Box<dyn Error>> {
             
             let vars = self.init_vars();
             let mut opt = self.init_optimizer(&vars, learning_rate);
-
-            for _epoch in 0..max_iter {
+            let mut train_progress = match devset_iter {
+                Some(_) => TrainingProgress::init_with_dev(),
+                None => TrainingProgress::init_no_dev()
+            };
+            
+            for epoch in 0..max_iter {
 
                 let mut epoch_loss = 0.0;
                 let mut epoch_accuracy = 0.0;
@@ -83,20 +79,35 @@ pub mod training {
                     self.step(xs, ys, vocab_size, model, Some(&mut opt), &mut epoch_loss, &mut epoch_accuracy);
                 }
 
+                // update training progress
+                let mut progress_entry = TrainingProgress {
+                    epoch: vec![epoch], epoch_loss: vec![epoch_loss], epoch_accuracy: vec![epoch_accuracy], dev_loss: None, dev_accuracy: None 
+                };
+
+                // add dev set calculation, update and early break
                 if devset_iter.is_some() {
 
                     let dev_iter = devset_iter.as_mut().unwrap();
                     let (dev_loss, dev_accuracy) = self.validate(dev_iter, model, vocab_size);
-                    
+                    progress_entry.dev_loss = Some(vec![dev_accuracy]);
+                    progress_entry.dev_accuracy = Some(vec![dev_accuracy]);
+
                     if self.break_early(epoch_loss, dev_loss) {
                         break;
                     }
+
                 }
+
+                // print progress
+                println!("{:?}", progress_entry);
+                train_progress = train_progress.add(progress_entry);
 
 
             }
 
-            Ok(())
+            // save model?
+
+            Ok(vars)
 
         
         }
@@ -168,6 +179,106 @@ pub mod training {
             let vars = VarStore::new(self.device);
             vars
         }
+
     }
+
+
+    #[derive(Debug)]
+    struct TrainingProgress {
+        epoch: Vec<i64>,
+        epoch_loss: Vec<f64>,
+        epoch_accuracy: Vec<f64>,
+        dev_loss: Option<Vec<f64>>,
+        dev_accuracy: Option<Vec<f64>>
+    }
+
+    impl TrainingProgress {
+        fn init_with_dev() -> Self {
+            Self {
+                epoch: vec![],
+                epoch_loss: vec![],
+                epoch_accuracy: vec![],
+                dev_loss: Some(vec![]),
+                dev_accuracy: Some(vec![])
+            }
+        }
+        fn init_no_dev() -> Self {
+            Self {
+                epoch: vec![],
+                epoch_loss: vec![],
+                epoch_accuracy: vec![],
+                dev_loss: None,
+                dev_accuracy: None
+            }
+        }
+    }
+
+    impl Add for TrainingProgress {
+        type Output = Self;
+
+        fn add(self, rhs: Self) -> Self::Output {
+
+            let mut new_epoch = self.epoch;
+            new_epoch.extend(rhs.epoch);
+
+            let mut new_epoch_loss = self.epoch_loss;
+            new_epoch_loss.extend(rhs.epoch_loss);
+
+            let mut new_epoch_accuracy = self.epoch_accuracy;
+            new_epoch_accuracy.extend(rhs.epoch_accuracy);
+
+            let mut new_dev_loss = None;
+            if self.dev_loss.is_some() {
+                new_dev_loss = self.dev_loss;
+                let add_dev_loss = rhs.dev_loss.unwrap_or(vec![]);
+                new_dev_loss.clone().unwrap().extend(add_dev_loss);
+            }
+
+            let mut new_dev_accuracy = None;
+            if self.dev_accuracy.is_some() {
+                new_dev_accuracy = self.dev_accuracy;
+                let add_dev_accuracy = rhs.dev_accuracy.unwrap_or(vec![]);
+                new_dev_accuracy.clone().unwrap().extend(add_dev_accuracy);
+            }
+
+            TrainingProgress {
+                epoch: new_epoch,
+                epoch_loss: new_epoch_loss,
+                epoch_accuracy: new_epoch_accuracy,
+                dev_loss: new_dev_loss,
+                dev_accuracy: new_dev_accuracy
+            }
+
+
+        }
+    }
+
+    impl Display for TrainingProgress {
+
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            
+            let n = self.epoch.len();
+            assert!(n > 0);
+            
+            let epoch = self.epoch.get(n-1).unwrap();
+            let epoch_loss = self.epoch_loss.get(n-1).unwrap();
+            let epoch_acc = self.epoch_accuracy.get(n-1).unwrap();
+
+            let mut to_print = format!("epoch: {}, train loss: {}, train acc: {}, ", epoch, epoch_loss, epoch_acc);
+
+            if let Some(dev_loss) = &self.dev_loss {
+                to_print += &format!("dev loss: {}", dev_loss.get(n-1).unwrap());
+            }
+
+            if let Some(dev_accuracy) = &self.dev_accuracy {
+                to_print += &format!("dev acc: {}", dev_accuracy.get(n-1).unwrap());
+            }
+
+            write!(f, "{}", to_print)
+
+        }
+    }
+
+
 
 }
