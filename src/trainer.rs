@@ -6,6 +6,7 @@ pub mod training {
     use std::error::Error;
     use std::fmt::Display;
     use std::ops::Add;
+    use std::time::Instant;
     use tch::{Tensor, Kind};
     use tch::data::Iter2;
 
@@ -60,6 +61,7 @@ pub mod training {
             
             for epoch in 0..max_iter {
 
+                let timer = Instant::now();
                 let mut total = 0.0;
                 let mut epoch_loss = 0.0;
                 let mut epoch_accuracy = 0.0;
@@ -79,7 +81,7 @@ pub mod training {
                 epoch_accuracy /= total;
 
                 let mut progress_entry = TrainingProgress {
-                    epoch: vec![epoch], epoch_loss: vec![epoch_loss], epoch_accuracy: vec![epoch_accuracy], dev_loss: None, dev_accuracy: None 
+                    epoch: vec![epoch], epoch_loss: vec![epoch_loss], epoch_accuracy: vec![epoch_accuracy], dev_loss: None, dev_accuracy: None, time: vec![timer.elapsed().as_secs() as i64]
                 };
 
                 // add dev set calculation, update and early break
@@ -99,7 +101,7 @@ pub mod training {
                 // print progress
                 println!("{}", progress_entry);
                 train_progress = train_progress.add(progress_entry);
-
+                println!("finished training, saved vecs. Took {} seconds ...", timer.elapsed().as_secs());
 
             }
 
@@ -182,7 +184,8 @@ pub mod training {
         epoch_loss: Vec<f64>,
         epoch_accuracy: Vec<f64>,
         dev_loss: Option<Vec<f64>>,
-        dev_accuracy: Option<Vec<f64>>
+        dev_accuracy: Option<Vec<f64>>,
+        time: Vec<i64>
     }
 
     impl TrainingProgress {
@@ -192,7 +195,8 @@ pub mod training {
                 epoch_loss: vec![],
                 epoch_accuracy: vec![],
                 dev_loss: Some(vec![]),
-                dev_accuracy: Some(vec![])
+                dev_accuracy: Some(vec![]),
+                time: vec![]
             }
         }
         fn init_no_dev() -> Self {
@@ -201,7 +205,8 @@ pub mod training {
                 epoch_loss: vec![],
                 epoch_accuracy: vec![],
                 dev_loss: None,
-                dev_accuracy: None
+                dev_accuracy: None,
+                time: vec![]
             }
         }
     }
@@ -234,12 +239,16 @@ pub mod training {
                 new_dev_accuracy.clone().unwrap().extend(add_dev_accuracy);
             }
 
+            let mut new_time = self.time;
+            new_time.extend(rhs.time);
+
             TrainingProgress {
                 epoch: new_epoch,
                 epoch_loss: new_epoch_loss,
                 epoch_accuracy: new_epoch_accuracy,
                 dev_loss: new_dev_loss,
-                dev_accuracy: new_dev_accuracy
+                dev_accuracy: new_dev_accuracy,
+                time: new_time
             }
 
 
@@ -256,8 +265,9 @@ pub mod training {
             let epoch = self.epoch.get(n-1).unwrap();
             let epoch_loss = self.epoch_loss.get(n-1).unwrap();
             let epoch_acc = self.epoch_accuracy.get(n-1).unwrap();
+            let time = self.time.get(n-1).unwrap();
 
-            let mut to_print = format!("epoch: {}, train loss: {}, train acc: {}, ", epoch, epoch_loss, epoch_acc);
+            let mut to_print = format!("epoch: {}, time (train): {}, train loss: {}, train acc: {}, ", epoch, time, epoch_loss, epoch_acc);
 
             if let Some(dev_loss) = &self.dev_loss {
                 to_print += &format!("dev loss: {}, ", dev_loss.get(n-1).unwrap());
