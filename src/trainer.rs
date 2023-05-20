@@ -101,8 +101,7 @@ pub mod training {
                 // print progress
                 println!("{}", progress_entry);
                 train_progress = train_progress.add(progress_entry);
-                println!("finished training, saved vecs. Took {} seconds ...", timer.elapsed().as_secs());
-
+                
             }
 
             // save model?
