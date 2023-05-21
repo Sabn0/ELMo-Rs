@@ -65,15 +65,13 @@ pub mod training {
                 let mut epoch_loss = 0.0;
                 let mut epoch_accuracy = 0.0;
 
-                for (xs, ys) in trainset_iter.shuffle().into_iter() {
+                for (xs, ys) in trainset_iter.shuffle().to_stream().into_iter() {
 
                     // xs of shape (batch_size, sequence_length, char_vocab_size)
                     // ys of shape (batch_size, sequence_length)
                     self.step(xs, ys, vocab_size, model, Some(&mut opt), &mut epoch_loss, &mut epoch_accuracy);
                     total += 1.0;
                 }
-
-                trainset_iter.reset_index();
 
                 // update training progress
                 epoch_loss /= total;
@@ -140,7 +138,7 @@ pub mod training {
             let mut loss = 0.0;
             let mut accuracy = 0.0;
 
-            for (xs, ys) in devset_iter.shuffle().into_iter() {
+            for (xs, ys) in devset_iter.shuffle().to_stream().into_iter() {
 
                 // already in device
                 // xs of shape (batch_size, sequence_length, char_vocab_size)
@@ -149,7 +147,6 @@ pub mod training {
                 total += 1.0;
             }
 
-            devset_iter.reset_index();
             (loss / total, accuracy / total)
 
         }
