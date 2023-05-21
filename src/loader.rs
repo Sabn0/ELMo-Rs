@@ -101,6 +101,7 @@ pub mod data_loading {
             }
 
             let slice = self.batch_size * self.seq_length;
+            println!("managing slice: {}", slice);
             let mut end_batch = self.start_index + slice;
 
             // that handles last smaller batch
@@ -137,6 +138,7 @@ pub mod data_loading {
                 Some((xs_batch, ys_batch))
 
             } else {
+
                 let xs_batch = self.xs.i(self.start_index..end_batch).reshape(&[self.batch_size, self.seq_length, -1]).to_device(self.device); // (batch_size, seq_length, max_token_length)
                 let ys_batch = self.ys.i(self.start_index..end_batch).reshape(&[self.batch_size, self.seq_length]).to_device(self.device); // (batch_size, seq_length)    
 

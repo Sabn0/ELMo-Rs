@@ -52,35 +52,40 @@ pub mod do_preprocess {
         }
 
         // uses the counter to get a vocabulary of words
-        fn count_tokens(&self, sentences: &Vec<String>, vocab_size: usize, min_count: usize, str_unk: &str) -> Vec<String> {
+        fn count_tokens(&self, sentences: &Vec<String>, token_vocab_size: &mut i64, min_count: i64, str_unk: &str) -> Vec<String> {
 
             println!("counting from {} sentences", sentences.len());
             let chunk = sentences.join(" ");
             let token2count = chunk.split_whitespace().map(|x| x.to_string()).collect::<Counter<_>>();
-            let mut tokens = token2count.k_most_common_ordered(vocab_size);
+            let mut tokens = token2count.k_most_common_ordered(*token_vocab_size as usize);
             tokens.push((String::from(str_unk), tokens.len()));
             let tokens = tokens
             .into_iter()
-            .filter(|(_, c)| *c as usize >= min_count)
+            .filter(|(_, c)| *c as i64 >= min_count)
             .map(|(t, _)| t)
             .collect::<Vec<String>>();
+            *token_vocab_size = tokens.len() as i64;
+            println!("working on token vocab : {}", *token_vocab_size);
             tokens
         }
 
         // uses the counter to get a vector of unique chars
-        fn count_chars(&self, vocab: &Vec<String>, char_start: char, char_end: char, char_unk: char) -> Vec<char> {
+        fn count_chars(&self, vocab: &Vec<String>, char_vocab_size: &mut i64, char_start: char, char_end: char, char_unk: char) -> Vec<char> {
             let char_chunk = vocab.join("");
-            let mut char2count = char_chunk.chars().collect::<Counter<_>>();
+            let mut char2count = char_chunk.chars().collect::<Counter<_>>().k_most_common_ordered(*char_vocab_size as usize);
             let n = char2count.len();
             char2count.extend([(char_start, n as usize), (char_end, 1 + n as usize), (char_unk, 2 + n as usize)]);
             let chars = char2count.into_iter().map(|(c, _)| c).collect::<Vec<char>>();
+            *char_vocab_size = chars.len() as i64;
+            println!("working on token vocab : {}", *char_vocab_size);
             chars
         }
 
 
         pub fn preprocess(&mut self, sentences: &mut Vec<String>,
-             vocab_size: usize,
-             min_count: usize,
+             token_vocab_size: &mut i64,
+             char_vocab_size: &mut i64,
+             min_count: i64,
              char_start: char,
              char_end: char,
              char_unk: char,
@@ -99,11 +104,11 @@ pub mod do_preprocess {
             });
 
             // create vocabulary of words
-            let tokens = self.count_tokens(&sentences, vocab_size, min_count, str_unk);
+            let tokens = self.count_tokens(&sentences, token_vocab_size, min_count, str_unk);
             let token2int: HashMap<String, usize> = <String as CollectT>::collect_gen(tokens);
 
             // create vocabulary of chars
-            let chars = self.count_chars(&sentences, char_start, char_end, char_unk);
+            let chars = self.count_chars(&sentences, char_vocab_size, char_start, char_end, char_unk);
             let char2int: HashMap<char, usize> = <char as CollectT>::collect_gen(chars);
 
             // token2int is bound with vocab_size tokens, minimum occurrences of min count. It countains and SOS,

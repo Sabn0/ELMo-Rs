@@ -34,7 +34,11 @@ pub mod training {
 
     impl ElmoTrainer {
 
-        pub fn new() -> Self { Self {} }
+        pub fn new() -> Self {
+
+             Self {} 
+            
+        }
 
         pub fn run_training(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, model: ELMo, vars: &mut VarStore, clip_norm: f64, vocab_size: i64) -> Result<(), Box<dyn Error>> {
 
