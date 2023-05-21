@@ -64,13 +64,14 @@ pub mod training {
                 let mut total = 0.0;
                 let mut epoch_loss = 0.0;
                 let mut epoch_accuracy = 0.0;
+                let batch_size = (&trainset_iter).batch_size;
 
                 for (xs, ys) in trainset_iter.shuffle().to_stream().into_iter() {
 
                     // xs of shape (batch_size, seq_length, max_token_length)
                     // ys of shape (batch_size, seq_length)
                     self.step(xs, ys, model, Some(&mut opt), &mut epoch_loss, &mut epoch_accuracy, clip_norm, vocab_size);
-                    total += 1.0;
+                    total += batch_size as f64;
                 }
 
                 // update training progress
@@ -128,8 +129,7 @@ pub mod training {
             }
 
             *loss += f64::try_from(batch_loss.mean(Kind::Float)).unwrap();
-            *accuracy += self.predict(&ys, &logits);
-
+            *accuracy += self.predict(&targets, &logits);
 
         }
 
@@ -138,6 +138,7 @@ pub mod training {
             let mut total = 0.0;
             let mut loss = 0.0;
             let mut accuracy = 0.0;
+            let batch_size = (&devset_iter).batch_size;
 
             for (xs, ys) in devset_iter.shuffle().to_stream().into_iter() {
 
@@ -145,7 +146,7 @@ pub mod training {
                 // xs of shape (sequence_length, max_token_length)
                 // ys of shape (sequence_length)                
                 self.step(xs, ys, model, None, &mut loss, &mut accuracy, clip_norm, vocab_size);
-                total += 1.0;
+                total += batch_size as f64;
             }
 
             (loss / total, accuracy / total)

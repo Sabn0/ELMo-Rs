@@ -20,8 +20,8 @@ pub mod data_loading {
         xs: Vec<Tensor>,
         ys: Vec<Tensor>,
         device: Device,
-        batch_size: i64,
-        seq_length: i64
+        pub batch_size: i64,
+        pub seq_length: i64
     }
 
     impl Loader {
@@ -71,6 +71,7 @@ pub mod data_loading {
                 device: self.device, 
                 batch_size: self.batch_size,
                 seq_length: self.seq_length,
+                max_token_length: dims_xs[1],
                 start_index: 0, 
                 end_index: dims_xs[0]
             }
@@ -84,6 +85,7 @@ pub mod data_loading {
         device: Device,
         batch_size: i64,
         seq_length: i64,
+        max_token_length: i64,
         start_index: i64,
         end_index: i64
     }
@@ -102,18 +104,43 @@ pub mod data_loading {
 
             // that handles last smaller batch
             if end_batch > self.end_index {
-                end_batch = self.end_index;
+
+                end_batch = self.end_index; 
+                let mut xs_batch = self.xs.i(self.start_index..end_batch).to_device(self.device);
+                let mut ys_batch = self.ys.i(self.start_index..end_batch).to_device(self.device);
+
+                // xs shape is (N, max_token_length). We want to reshape to roughly have dim1 = seq_length
+                let dims = Vec::<i64>::try_from(xs_batch.internal_shape_as_tensor()).unwrap();
+                if dims[1] < self.seq_length {
+
+                    xs_batch = xs_batch.reshape(&[1, -1, self.max_token_length]);
+                    ys_batch = ys_batch.reshape(&[1, -1]);
+
+                } else {
+                    xs_batch = xs_batch.reshape(&[-1, self.seq_length, self.max_token_length]);
+                    ys_batch = ys_batch.reshape(&[-1, self.seq_length]);
+                }
+
+                // promote starting index for next next()
+                self.start_index = end_batch;
+
+                Some((xs_batch, ys_batch))
+
+            } else {
+                let xs_batch = self.xs.i(self.start_index..end_batch).reshape(&[self.batch_size, self.seq_length, -1]).to_device(self.device); // (batch_size, seq_length, max_token_length)
+                let ys_batch = self.ys.i(self.start_index..end_batch).reshape(&[self.batch_size, self.seq_length]).to_device(self.device); // (batch_size, seq_length)    
+
+                // promote starting index for next next()
+                self.start_index = end_batch;
+
+                Some((xs_batch, ys_batch))
             }
 
-            let xs_batch = self.xs.i(self.start_index..end_batch).reshape(&[self.batch_size, self.seq_length, -1]).to_device(self.device); // (batch_size, seq_length, max_token_length)
-            let ys_batch = self.ys.i(self.start_index..end_batch).reshape(&[self.batch_size, self.seq_length]).to_device(self.device); // (batch_size, seq_length)
-
-            // promote starting index for next next()
-            self.start_index = end_batch;
-
             // xs_batch should be (batch_size, seq_length, max_token_length)
-            // ys_batch should be (batch_size, seq_length) 
-            Some((xs_batch, ys_batch))
+            // ys_batch should be (batch_size, seq_length)
+
+            // last iteration might be smaller
+
         }
     }
 
