@@ -93,7 +93,7 @@ fn main() {
                 &mut devset_iter, 
                 params.learning_rate, 
                 params.max_iter, 
-                model, params.token_vocab_size, 
+                model,
                 &mut vars) 
     {
         panic!("{}", e);

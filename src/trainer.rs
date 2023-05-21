@@ -15,9 +15,9 @@ pub mod training {
     pub trait TrainModel {
         
         // train forces (x,y) labels for now (classification)
-        fn train(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, vocab_size: i64, model: &impl ModuleT, vars: &mut VarStore) -> Result<(), Box<dyn Error>>;
-        fn validate(&self, devset_iter: &mut Loader, model: &impl ModuleT, vocab_size: i64) -> (f64, f64);
-        fn step(&self, xs: Tensor, ys: Tensor, vocab_size: i64, model: &impl ModuleT, opt: Option<&mut Optimizer>, loss: &mut f64, accuracy: &mut f64);       
+        fn train(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, model: &impl ModuleT, vars: &mut VarStore) -> Result<(), Box<dyn Error>>;
+        fn validate(&self, devset_iter: &mut Loader, model: &impl ModuleT) -> (f64, f64);
+        fn step(&self, xs: Tensor, ys: Tensor, model: &impl ModuleT, opt: Option<&mut Optimizer>, loss: &mut f64, accuracy: &mut f64);       
         fn predict(&self, targets: &Tensor, logits: &Tensor) -> f64;
         fn init_optimizer(&self, vars: &VarStore, learning_rate: f64) -> Optimizer;
         
@@ -36,9 +36,9 @@ pub mod training {
 
         pub fn new() -> Self { Self {} }
 
-        pub fn run_training(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, model: ELMo, vocab_size: i64, vars: &mut VarStore) -> Result<(), Box<dyn Error>> {
+        pub fn run_training(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, model: ELMo, vars: &mut VarStore) -> Result<(), Box<dyn Error>> {
 
-            self.train(trainset_iter, devset_iter, learning_rate, max_iter, vocab_size, &model, vars)?;
+            self.train(trainset_iter, devset_iter, learning_rate, max_iter, &model, vars)?;
             Ok(())
         }
 
@@ -50,7 +50,7 @@ pub mod training {
 
     impl TrainModel for ElmoTrainer {
         
-        fn train(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, vocab_size: i64, model: &impl ModuleT, vars: &mut VarStore) -> Result<(), Box<dyn Error>> {
+        fn train(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, model: &impl ModuleT, vars: &mut VarStore) -> Result<(), Box<dyn Error>> {
             
             let mut opt = self.init_optimizer(&vars, learning_rate);
             let mut train_progress = match devset_iter {
@@ -67,9 +67,9 @@ pub mod training {
 
                 for (xs, ys) in trainset_iter.shuffle().to_stream().into_iter() {
 
-                    // xs of shape (batch_size, sequence_length, char_vocab_size)
-                    // ys of shape (batch_size, sequence_length)
-                    self.step(xs, ys, vocab_size, model, Some(&mut opt), &mut epoch_loss, &mut epoch_accuracy);
+                    // xs of shape (sequence_length, max_token_length)
+                    // ys of shape (sequence_length)
+                    self.step(xs, ys, model, Some(&mut opt), &mut epoch_loss, &mut epoch_accuracy);
                     total += 1.0;
                 }
 
@@ -85,7 +85,7 @@ pub mod training {
                 if devset_iter.is_some() {
 
                     let dev_iter = devset_iter.as_mut().unwrap();
-                    let (dev_loss, dev_accuracy) = self.validate(dev_iter, model, vocab_size);
+                    let (dev_loss, dev_accuracy) = self.validate(dev_iter, model);
                     progress_entry.dev_loss = Some(vec![dev_loss]);
                     progress_entry.dev_accuracy = Some(vec![dev_accuracy]);
 
@@ -108,7 +108,7 @@ pub mod training {
         
         }
 
-        fn step(&self, xs: Tensor, ys: Tensor, vocab_size: i64, model: &impl ModuleT, opt: Option<&mut Optimizer>, loss: &mut f64, accuracy: &mut f64) {
+        fn step(&self, xs: Tensor, ys: Tensor, model: &impl ModuleT, opt: Option<&mut Optimizer>, loss: &mut f64, accuracy: &mut f64) {
 
             let train_mode = match &opt {
                 Some(_) => true,
@@ -116,23 +116,20 @@ pub mod training {
             };
 
             let logits = model.forward_t(&xs, train_mode); // move throught model...
-            // logits of shape (batch_Size, sequence_lngth, token_vocab_size)
+            // logits of shape (sequence_length, token_vocab_size)
 
-            // logits and y should move to 2dim for cross entropy loss. This is another reason for batch_size =1...
-            let logits = logits.reshape(&[-1, vocab_size]);
-            let targets = ys.reshape(&[-1]).totype(Kind::Int64);
-            let batch_loss = logits.cross_entropy_for_logits(&targets);
+            let batch_loss = logits.cross_entropy_for_logits(&ys);
 
             if train_mode {
                 opt.unwrap().backward_step(&batch_loss);
             }
 
             *loss += <f64>::from(batch_loss.mean(Kind::Float));
-            *accuracy += self.predict(&targets, &logits);
+            *accuracy += self.predict(&ys, &logits);
 
         }
 
-        fn validate(&self, devset_iter: &mut Loader, model: &impl ModuleT, vocab_size: i64) -> (f64, f64) {
+        fn validate(&self, devset_iter: &mut Loader, model: &impl ModuleT) -> (f64, f64) {
 
             let mut total = 0.0;
             let mut loss = 0.0;
@@ -141,9 +138,9 @@ pub mod training {
             for (xs, ys) in devset_iter.shuffle().to_stream().into_iter() {
 
                 // already in device
-                // xs of shape (batch_size, sequence_length, char_vocab_size)
-                // ys of shape (batch_size, sequence_length)                
-                self.step(xs, ys, vocab_size, model, None, &mut loss, &mut accuracy);
+                // xs of shape (sequence_length, max_token_length)
+                // ys of shape (sequence_length)                
+                self.step(xs, ys, model, None, &mut loss, &mut accuracy);
                 total += 1.0;
             }
 
