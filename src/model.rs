@@ -2,7 +2,7 @@
 use std::iter::zip;
 use std::ops::Mul;
 
-use tch::{nn, Tensor};
+use tch::{nn, Tensor, IndexOp};
 use tch::nn::{ModuleT, RNN, ConvConfigND};
 
 
@@ -207,6 +207,7 @@ impl UniLM {
     pub fn new(vars: &nn::Path, n_lstm_layers: i64, in_dim: i64, hidden_dim: i64, dropout: f64) -> Self {
 
         let mut lstm_layers = Vec::new();
+
         for _ in 0..n_lstm_layers {
 
             // default on rnn gives everything we need except for dropout, taken care in forward
@@ -320,9 +321,9 @@ impl ModuleT for ELMo {
 
         // the elmo representation is a combination of all the outputs (2L) + xs
         // for the simple case, I take the sum of xs and the two last outputs
-        let forward_last = forward_lm_outs.slice(0, self.n_lstm_layers-1, self.n_lstm_layers, 1);
-        let backward_last = backward_lm_outs.slice(0, self.n_lstm_layers-1, self.n_lstm_layers, 1);
-        
+        let forward_last = forward_lm_outs.i(self.n_lstm_layers-1..self.n_lstm_layers).squeeze_dim(0);
+        let backward_last = backward_lm_outs.i(self.n_lstm_layers-1..self.n_lstm_layers).squeeze_dim(0);
+
         // all the representations most transfer to vocabulary size
         let xs_embedded_out = xs_embedded.apply(&self.to_vocab);
         let forward_out = forward_last.apply(&self.to_vocab);
