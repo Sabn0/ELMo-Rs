@@ -100,10 +100,13 @@ pub mod data_loading {
                 return None
             }
 
-            let mut end_batch = self.start_index + self.batch_size * self.seq_length;
+            let slice = self.batch_size * self.seq_length;
+            let mut end_batch = self.start_index + slice;
 
             // that handles last smaller batch
             if end_batch > self.end_index {
+
+                // in this case, skipping the maybe less that seq_length words
 
                 end_batch = self.end_index; 
                 let mut xs_batch = self.xs.i(self.start_index..end_batch).to_device(self.device);
@@ -113,12 +116,19 @@ pub mod data_loading {
                 let dims = Vec::<i64>::try_from(xs_batch.internal_shape_as_tensor()).unwrap();
                 if dims[1] < self.seq_length {
 
-                    xs_batch = xs_batch.reshape(&[1, -1, self.max_token_length]);
-                    ys_batch = ys_batch.reshape(&[1, -1]);
+                    return None
 
                 } else {
-                    xs_batch = xs_batch.reshape(&[-1, self.seq_length, self.max_token_length]);
-                    ys_batch = ys_batch.reshape(&[-1, self.seq_length]);
+
+                    // find the biggest number that devides with seq length up to N
+                    for i in (dims[1]-self.seq_length..dims[1]).rev() {
+                        if i % self.seq_length == 0 {
+
+                            xs_batch = xs_batch.i(..i).reshape([-1, self.seq_length, self.max_token_length]);
+                            ys_batch = ys_batch.i(..i).reshape([-1, self.seq_length]);
+                            break;
+                        }
+                    }
                 }
 
                 // promote starting index for next next()
