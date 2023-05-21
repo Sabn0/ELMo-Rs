@@ -10,6 +10,7 @@ use tch::nn::{ModuleT, RNN, ConvConfigND};
 // a narrow convolution between a charachter within a word, C_k \in (d, l),  
 // and a kernel H \in (d, w), where d is char embedding, l is the length of the word,
 // and w is the size of the kernal. The multiplication is done as a dot product.
+
 #[derive(Debug)]
 pub struct CnnBlock {
     conv: nn::Conv<[i64; 2]>,
@@ -19,7 +20,6 @@ pub struct CnnBlock {
 impl CnnBlock {
     fn new(vars: &nn::Path, in_channels: i64, out_channels: i64, kernel_size: i64, embedding_dim: i64) -> Self {
 
-        // handling embedding dim d as input channels.
         // hadnling number of filters h as output channels.
         let conv = nn::conv(vars, in_channels, out_channels, [embedding_dim, kernel_size], ConvConfigND::default());
         //let conv = nn::conv1d(vars, in_channels, out_channels, kernel_size, Default::default());
@@ -36,35 +36,34 @@ impl CnnBlock {
 impl ModuleT for CnnBlock {
     fn forward_t(&self, xs: &Tensor, _train: bool) -> Tensor {
         
-        // xs is of shape (batch_size, 1, token_length, embedding_dim)
+        // xs is of shape (1, token_length, embedding_dim)
         let dims = xs.internal_shape_as_tensor();
         let dims = Vec::<i64>::from(dims);
-        assert!(4 == dims.len());
+        assert!(3 == dims.len());
 
-        let batch_size = dims[0];
-        let token_length = dims[2];
-        let embedding_dim = dims[3];
+        let token_length = dims[1];
+        let embedding_dim = dims[2];
         let pool_kernel: i64 = token_length - self.kernel_size + 1;
 
-        // xs reshape : (batch_size, token_length, embedding_dim) => (batch_size, 1, embedding_dim, token_length)
-        let xs = xs.reshape(&[batch_size, 1, embedding_dim, token_length]);
+        // xs reshape : (1, token_length, embedding_dim) => (1, embedding_dim, token_length)
+        let xs = xs.reshape(&[1, embedding_dim, token_length]);
 
         // denote token_length = l, out_channels = h = number of filters, kernel_size = w, embedding_dim = d
         // self.conv.w is of shape (h, 1, d, w)
-        // conv does (h, 1, d, w) * (batch_size, 1, d, l) => (batch_size, h, 1, l-w+1)
+        // conv does (h, 1, d, w) * (1, d, l) => (h, 1, l-w+1)
         let conv_out = xs.apply(&self.conv);
 
-        // tanh doesn't change dims, (batch_size, h, 1, l-w+1), then move to (batch_size, h, l-w+1)
-        assert!(Vec::<i64>::from(conv_out.internal_shape_as_tensor())[2] == 1);
-        let act_out = conv_out.tanh().squeeze_dim(2);
+        // tanh doesn't change dims, (h, 1, l-w+1), then move to (h, l-w+1)
+        assert!(Vec::<i64>::from(conv_out.internal_shape_as_tensor())[1] == 1);
+        let act_out = conv_out.tanh().squeeze_dim(1);
          
-         // max_pool1d moves xs : (batch_size, h, l-w+1) => (batch_size, h, 1)
+         // max_pool1d moves xs : (h, l-w+1) => (h, 1)
         let pool_out = act_out.max_pool1d(&[pool_kernel], &[1], &[0], &[1], false);
 
-        // the output should be (batch_size, h)
-        let out = pool_out.squeeze_dim(2);
+        // the output should be (h)
+        assert!(Vec::<i64>::from(pool_out.internal_shape_as_tensor())[1] == 1);
+        let out = pool_out.squeeze_dim(1);
 
-        
         out
     }
 }
@@ -99,7 +98,7 @@ impl ModuleT for Highway {
         let out: Tensor = transform_part + carry_part;
         out
 
-        // xs should remain (batch_size, total_filters) from input to end
+        // xs should remain (total_filters,) from input to end
     }
 }
 
@@ -158,39 +157,37 @@ impl ModuleT for CharLevelNet {
     
     fn forward_t(&self, xs: &Tensor, train: bool) -> Tensor {
 
-        // xs is of shape (batch_size, sequence_length, token_length), batch_size = 1
+        // xs is of shape (sequence_length, token_length),      batch_size = fixed number of words
         let dims = xs.internal_shape_as_tensor();
         let dims = Vec::<i64>::from(dims);
-        let batch_size = &dims[0];
-        let seq_length = &dims[1];
+        let sequence_length = &dims[0];
         
         // iterate over tokens
         let mut outputs = Vec::new();
-        for s in 0..*seq_length {
+        for s in 0..*sequence_length {
 
-            let xs_tokens: Tensor = xs.slice(1, s, s+1, 1); // should be (batch_size, 1, token_length)
-            let x = xs_tokens.apply(&self.embedding); // should be (batch_size, 1, token_length, embedding_dim)
+            let xs_tokens: Tensor = xs.slice(0, s, s+1, 1); // should be (1, token_length)
+            let x = xs_tokens.apply(&self.embedding); // should be (1, token_length, embedding_dim)
             let mut token_outputs = Vec::new();
             for conv_block in &self.conv_blocks {
-                let out = conv_block.forward_t(&x, train); // out is of shape (batch_size, n_filters)
+                let out = conv_block.forward_t(&x, train); // out is of shape (n_filters,)
                 token_outputs.push(out);
             }
 
-            // each output in token_outputs is of shape k * (batch_size, n_filters) => (batch_size, total_filters)
-            let mut token_outputs = Tensor::concat(&token_outputs, 1);
+            // each output in token_outputs is of shape k * (n_filters,) => (total_filters,)
+            let mut token_outputs = Tensor::concat(&token_outputs, 0);
 
-            // move through highways, remains (batch_size, total_filters)
+            // move through highways, remains (total_filters)
             for highway in &self.highways {
                 token_outputs = highway.forward_t(&token_outputs, train);
             }
-
             outputs.push(token_outputs);
         }
 
-        // (sequence_length, batch_size, total_filters) => (batch_size, sequence_length, total_filters)
-        let outputs = Tensor::concat(&outputs, 0).reshape(&[*batch_size, *seq_length, -1]);
+        // sequence_length * (total_filters) => (sequence_length, total_filters)
+        let outputs = Tensor::stack(&outputs, 0);
 
-        // move to linear out (batch_size, sequence_length, total_filters) => (batch_size, sequence_length, out_linear)
+        // move to linear out (sequence_length, total_filters) => (sequence_length, out_linear)
         let outputs = outputs.apply(&self.out_linear);
         outputs
 
@@ -233,11 +230,14 @@ impl ModuleT for UniLM {
 
     fn forward_t(&self, xs: &Tensor, train: bool) -> Tensor {
         
-        // xs should be (batch_size, sequence_length, out_linear)
-        
+        // xs should be (sequence_length, out_linear)
+
+        // seems like the input most be batched for some reason.. (1, sequence_length, out_linear)
+        let batched_xs = &xs.unsqueeze(0);
+
         // need residual connections, so lstm out should be the same size of input
-        let mut out = xs.to_owned().shallow_clone();
-        let mut outputs = vec![xs.to_owned().shallow_clone()];
+        let mut out = batched_xs.to_owned().shallow_clone();
+        let mut outputs = vec![batched_xs.to_owned().shallow_clone()];
 
         for (j, lstm) in (&self.lstm_layers).iter().enumerate() {
 
@@ -247,7 +247,7 @@ impl ModuleT for UniLM {
             let out_lstm = lstm.seq(&out.dropout(self.dropout, train));
             out = out_lstm.0;
             
-            // out moves back to shape (batch_size, sequence_length, hidden_dim) => (batch_size, sequence_length, out_linear)
+            // out moves back to shape (1, sequence_length, hidden_dim) => (1, sequence_length, out_linear)
             out = out.apply(&self.to_rep);
 
             // adding residual to out
@@ -255,7 +255,7 @@ impl ModuleT for UniLM {
 
         }
 
-        // move n_lstm_layers * (batch_size, sequence_length, out_linear) =>  (n_lstm_layers, batch_size, sequence_length, out_linear)
+        // move n_lstm_layers * (1, sequence_length, out_linear) =>  (n_lstm_layers, sequence_length, out_linear)
         let outputs = Tensor::concat(&outputs, 0);
         outputs
 
@@ -307,14 +307,14 @@ impl ModuleT for ELMo {
 
     fn forward_t(&self, xs: &Tensor, train: bool) -> Tensor {
         
-        // xs is of shape (batch_size, sequence_length, token_length), batch_size = 1
-        // move through char enconding => (batch_size, sequence_length, out_linear)
+        // xs is of shape (sequence_length, token_length),          batch_size = fixed sequence of words
+        // move through char enconding => (sequence_length, out_linear)
         let xs_embedded = &self.char_level.forward_t(xs, train);
 
-        // xs_embedded should be (batch_size, sequence_length, out_linear)
-        let xs_embedded_flip = Tensor::flip(&xs_embedded.to_owned().shallow_clone(), &[1]);
+        // xs_embedded should be (sequence_length, out_linear)
+        let xs_embedded_flip = Tensor::flip(&xs_embedded.to_owned().shallow_clone(), &[0]);
 
-        // both should be (n_lstm_layers, batch_size, sequence_length, out_linear)
+        // both should be (n_lstm_layers, sequence_length, out_linear)
         let forward_lm_outs = self.forward_lm.forward_t(xs_embedded, train);
         let backward_lm_outs = self.backward_lm.forward_t(&xs_embedded_flip, train);
 
@@ -329,7 +329,7 @@ impl ModuleT for ELMo {
         let backward_out = backward_last.apply(&self.to_vocab);
 
         let out = xs_embedded_out + forward_out + backward_out;
-        out // (batch_size, sequence_length, token_vocab_size)
+        out // (sequence_length, token_vocab_size)
 
     }
 }
