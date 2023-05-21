@@ -136,7 +136,7 @@ impl Conigure for ConfigElmo {
             dropout: 0.1,
             max_iter: 10,
             batch_size: 128,
-            learning_rate: 0.2, // maybe different
+            learning_rate: 0.001,               // maybe different
             device: Device::cuda_if_available(),
             char_start: '$',
             char_end: '^',
