@@ -19,6 +19,7 @@ pub struct JsonELMo {
     pub char_unk: char,
     pub str_unk: String,
     pub batch_size: i64,
+    pub seq_length: i64,
     pub char_embedding_dim: i64,
     pub in_channels: i64,
     pub out_channels: Vec<i64>,
@@ -53,6 +54,7 @@ impl Display for JsonELMo {
         max_iter: {},
         learning_rate: {},
         batch_size: {},
+        seq_length: {},
         clip_norm: {}",
         self.token_vocab_size,
         self.char_vocab_size, 
@@ -70,6 +72,7 @@ impl Display for JsonELMo {
         self.max_iter, 
         self.learning_rate,
         self.batch_size,
+        self.seq_length,
         self.clip_norm
     )
     }
@@ -140,6 +143,7 @@ impl Conigure for ConfigElmo {
             dropout: 0.1,
             max_iter: 10,
             batch_size: 128,
+            seq_length: 20,
             clip_norm: 3.0,
             learning_rate: 0.001,               // maybe different
             device: Device::cuda_if_available(),
@@ -226,6 +230,9 @@ impl Conigure for ConfigElmo {
         }
         if let Ok(batch_size) = validate_positive_int("batch_size") {
             params.batch_size = batch_size;
+        }
+        if let Ok(seq_length) = validate_positive_int("seq_length") {
+            params.seq_length = seq_length;
         }
         if let Ok(dropout) = validate_float("dropout") {
             params.dropout = dropout;
