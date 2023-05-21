@@ -230,7 +230,7 @@ pub mod data_loading {
             // move to tensor
             let inputs_tensor = Tensor::concat(&inputs, 0).reshape(&[-1, self.max_len_token.unwrap() as i64]);
             let labels_tensor = Tensor::concat(&labels, 0).reshape(&[-1]);
-            assert_eq!(Vec::<i64>::from(inputs_tensor.internal_shape_as_tensor())[1], Vec::<i64>::from(labels_tensor.internal_shape_as_tensor())[1]);
+            assert_eq!(Vec::<i64>::from(inputs_tensor.internal_shape_as_tensor())[0], Vec::<i64>::from(labels_tensor.internal_shape_as_tensor())[0]);
             
             // inputs_tensor is of shape (sentence_length, max_token_length)
             // labels_tnesor is of shape (sentence_length)
