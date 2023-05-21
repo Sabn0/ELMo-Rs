@@ -81,7 +81,7 @@ fn main() {
         .map(|i| elmo_text_loader.get_example(*i as usize).unwrap())
         .unzip();
 
-        Loader::new(xs, ys, params.device)
+        Loader::new(xs, ys, params.device, params.batch_size)
     });
     
     let mut trainset_iter = iters.next().unwrap();
