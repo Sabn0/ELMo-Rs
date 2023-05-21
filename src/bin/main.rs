@@ -95,7 +95,8 @@ fn main() {
                 params.max_iter, 
                 model,
                 &mut vars,
-                params.clip_norm) 
+                params.clip_norm,
+                params.token_vocab_size) 
     {
         panic!("{}", e);
     };
