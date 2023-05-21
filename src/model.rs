@@ -312,7 +312,7 @@ impl ModuleT for ELMo {
         // xs_embedded should be (batch_size, sequence_length, out_linear)
         let xs_embedded_flip = Tensor::flip(&xs_embedded.to_owned().shallow_clone(), &[0]);
 
-        // both should be (n_lstm_layers, batch_size, sequence_length, out_linear)
+        // both should be (n_lstm_layers, batch_size, seq_length, out_linear)
         let forward_lm_outs = self.forward_lm.forward_t(xs_embedded, train);
         let backward_lm_outs = self.backward_lm.forward_t(&xs_embedded_flip, train);
 
@@ -327,7 +327,7 @@ impl ModuleT for ELMo {
         let backward_out = backward_last.apply(&self.to_vocab);
 
         let out = xs_embedded_out + forward_out + backward_out;
-        out // (batch_size, sequence_length, token_vocab_size)
+        out // (batch_size, seq_length, token_vocab_size)
 
     }
 }
