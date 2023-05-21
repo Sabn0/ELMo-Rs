@@ -108,7 +108,7 @@ pub mod training {
         
         }
 
-        fn step(&self, xs: Tensor, ys: Tensor, model: &impl ModuleT, opt: Option<&mut Optimizer>, loss: &mut f64, accuracy: &mut f64, clip_norm: f64) {
+        fn step(&self, xs: Tensor, ys: Tensor, model: &impl ModuleT, opt: Option<&mut Optimizer>, loss: &mut f64, accuracy: &mut f64, _clip_norm: f64) {
 
             let train_mode = match &opt {
                 Some(_) => true,
@@ -118,21 +118,15 @@ pub mod training {
             let logits = model.forward_t(&xs, train_mode); // move throught model...
             // logits of shape (sequence_length, token_vocab_size)
 
-            let timer = Instant::now();
             let batch_loss = logits.cross_entropy_for_logits(&ys);
-            println!("cross entropy part : {}", timer.elapsed().as_nanos());
 
-            let timer = Instant::now();
             if train_mode {
-                println!("batch loss: {:#?}", batch_loss);
-                opt.unwrap().backward_step_clip(&batch_loss, clip_norm);
+                opt.unwrap().backward_step(&batch_loss);
             }
-            println!("opt part : {}", timer.elapsed().as_nanos());
 
-            let timer = Instant::now();
             *loss += f64::try_from(batch_loss.mean(Kind::Float)).unwrap();
             *accuracy += self.predict(&ys, &logits);
-            println!("predict part : {}", timer.elapsed().as_nanos());
+
 
         }
 
