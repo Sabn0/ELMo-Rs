@@ -11,31 +11,36 @@ pub mod data_loading {
     use std::error::Error;
 
     use tch::Device;
+    use tch::IndexOp;
     use tch::Kind;
     use tch::Tensor;
 
-    // a loader similar to Iter2 of tch, 
-    // but handles batch_size = 1 loading, with iterator and shuffling
+    // a loader similar to Iter2 of tch
     pub struct Loader {
         xs: Vec<Tensor>,
         ys: Vec<Tensor>,
         device: Device,
-        pub current_index: i64
+        batch_size: i64
     }
 
     impl Loader {
-        pub fn new(xs: Vec<Tensor>, ys: Vec<Tensor>, device: Device) -> Self {
+        pub fn new(xs: Vec<Tensor>, ys: Vec<Tensor>, device: Device, batch_size: i64) -> Self {
             assert_eq!(xs.len(), ys.len());
+
+            // each element in xs is of shape (sentence_length, max_token_length)
+            // each element in ys is of shape (sentence_length)
+            // the catch is - every sentence has different length. 
+
+            // After shuffling, in StreamLoader:
+            // So we move to stream of words of batch_size
+            // from that point, batch_size = sequence length (of words)
+
             Self {
                 xs: xs,
                 ys: ys,
                 device: device,
-                current_index: -1
+                batch_size: batch_size
             }
-        }
-
-        pub fn reset_index(&mut self) {
-            self.current_index = -1;
         }
 
         pub fn shuffle(&mut self) -> &mut Loader {
@@ -47,22 +52,63 @@ pub mod data_loading {
             self.ys = (&permutation).into_iter().map(|i| self.ys.get(*i as usize).unwrap().shallow_clone()).collect::<Vec<Tensor>>();
             assert!(self.xs.len() == n_samples);
             self
+
         }
+
+        pub fn to_stream(&mut self) -> StreamLoader {
+
+            let xs = Tensor::concat(&self.xs, 0); // of shape (N_tokens, max_token_length)
+            let ys = Tensor::concat(&self.ys, 0); // of shape (N_tokens)
+
+            let dims_xs = Vec::<i64>::from(xs.internal_shape_as_tensor());
+            let dims_ys = Vec::<i64>::from(ys.internal_shape_as_tensor());
+            assert_eq!(dims_xs[0], dims_ys[0]);
+            
+            StreamLoader { 
+                xs: xs.shallow_clone(), 
+                ys: ys.shallow_clone(), 
+                device: self.device, 
+                batch_size: self.batch_size, 
+                start_index: 0, 
+                end_index: dims_xs[0]
+            }
+        }
+
     }
 
-    impl Iterator for Loader {
+    pub struct StreamLoader {
+        xs: Tensor,
+        ys: Tensor,
+        device: Device,
+        batch_size: i64,
+        start_index: i64,
+        end_index: i64
+    }
+
+    impl Iterator for StreamLoader {
         type Item = (Tensor, Tensor);
 
         fn next(&mut self) -> Option<Self::Item> {
             
-            self.current_index += 1;
-            if self.current_index >= self.xs.len() as i64 {
+            // that ends loop over examples
+            if self.start_index >= self.end_index {
                 return None
             }
 
-            let x = self.xs.get(self.current_index as usize).unwrap().shallow_clone().to_device(self.device);
-            let y = self.ys.get(self.current_index as usize).unwrap().shallow_clone().to_device(self.device);
-            Some((x, y))
+            let mut end_batch = self.start_index + self.batch_size;
+
+            // that handles last smaller batch
+            if end_batch > self.end_index {
+                end_batch = self.end_index;
+            }
+
+            let xs_batch = self.xs.i(self.start_index..end_batch).to_device(self.device); // (batch_size, max_token_length)
+            let ys_batch = self.ys.i(self.start_index..end_batch).to_device(self.device); // (batch_size)
+
+            // promote starting index for next next()
+            self.start_index = end_batch;
+
+            Some((xs_batch, ys_batch))
         }
     }
 
@@ -182,9 +228,12 @@ pub mod data_loading {
             assert_eq!(inputs.len(), labels.len());
 
             // move to tensor
-            let inputs_tensor = Tensor::concat(&inputs, 0).reshape(&[1, -1, self.max_len_token.unwrap() as i64]);
-            let labels_tensor = Tensor::concat(&labels, 0).reshape(&[1, -1]);
+            let inputs_tensor = Tensor::concat(&inputs, 0).reshape(&[-1, self.max_len_token.unwrap() as i64]);
+            let labels_tensor = Tensor::concat(&labels, 0).reshape(&[-1]);
             assert_eq!(Vec::<i64>::from(inputs_tensor.internal_shape_as_tensor())[1], Vec::<i64>::from(labels_tensor.internal_shape_as_tensor())[1]);
+            
+            // inputs_tensor is of shape (sentence_length, max_token_length)
+            // labels_tnesor is of shape (sentence_length)
             let output = (inputs_tensor, labels_tensor);
             Ok(output)
 
