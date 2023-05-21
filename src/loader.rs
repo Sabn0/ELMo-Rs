@@ -20,11 +20,12 @@ pub mod data_loading {
         xs: Vec<Tensor>,
         ys: Vec<Tensor>,
         device: Device,
-        batch_size: i64
+        batch_size: i64,
+        seq_length: i64
     }
 
     impl Loader {
-        pub fn new(xs: Vec<Tensor>, ys: Vec<Tensor>, device: Device, batch_size: i64) -> Self {
+        pub fn new(xs: Vec<Tensor>, ys: Vec<Tensor>, device: Device, batch_size: i64, seq_length: i64) -> Self {
             assert_eq!(xs.len(), ys.len());
 
             // each element in xs is of shape (sentence_length, max_token_length)
@@ -32,14 +33,14 @@ pub mod data_loading {
             // the catch is - every sentence has different length. 
 
             // After shuffling, in StreamLoader:
-            // So we move to stream of words of batch_size
-            // from that point, batch_size = sequence length (of words)
+            // So we will move to stream of words of batch_size * seq_length
 
             Self {
                 xs: xs,
                 ys: ys,
                 device: device,
-                batch_size: batch_size
+                batch_size: batch_size,
+                seq_length: seq_length
             }
         }
 
@@ -68,7 +69,8 @@ pub mod data_loading {
                 xs: xs.shallow_clone(), 
                 ys: ys.shallow_clone(), 
                 device: self.device, 
-                batch_size: self.batch_size, 
+                batch_size: self.batch_size,
+                seq_length: self.seq_length,
                 start_index: 0, 
                 end_index: dims_xs[0]
             }
@@ -81,6 +83,7 @@ pub mod data_loading {
         ys: Tensor,
         device: Device,
         batch_size: i64,
+        seq_length: i64,
         start_index: i64,
         end_index: i64
     }
@@ -95,19 +98,21 @@ pub mod data_loading {
                 return None
             }
 
-            let mut end_batch = self.start_index + self.batch_size;
+            let mut end_batch = self.start_index + self.batch_size * self.seq_length;
 
             // that handles last smaller batch
             if end_batch > self.end_index {
                 end_batch = self.end_index;
             }
 
-            let xs_batch = self.xs.i(self.start_index..end_batch).to_device(self.device); // (batch_size, max_token_length)
-            let ys_batch = self.ys.i(self.start_index..end_batch).to_device(self.device); // (batch_size)
+            let xs_batch = self.xs.i(self.start_index..end_batch).reshape(&[self.batch_size, self.seq_length, -1]).to_device(self.device); // (batch_size, seq_length, max_token_length)
+            let ys_batch = self.ys.i(self.start_index..end_batch).reshape(&[self.batch_size, self.seq_length]).to_device(self.device); // (batch_size, seq_length)
 
             // promote starting index for next next()
             self.start_index = end_batch;
 
+            // xs_batch should be (batch_size, seq_length, max_token_length)
+            // ys_batch should be (batch_size, seq_length) 
             Some((xs_batch, ys_batch))
         }
     }
