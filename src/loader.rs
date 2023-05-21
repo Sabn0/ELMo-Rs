@@ -201,7 +201,7 @@ pub mod data_loading {
             let unk_id = self.token2int.get(&self.str_unk).expect("didn't find unk symbol");
             let mut labels = (&tokens).iter().map(|t| {
                 let label = self.token2int.get(t).cloned().unwrap_or(*unk_id);
-                Tensor::from_slice(&[label as u8])
+                Tensor::from_slice(&[label as i64])
             } ).collect::<Vec<Tensor>>();
 
             // move each token from string of chars to int encoding of fixed maximal length
@@ -275,7 +275,7 @@ pub mod data_loading {
             assert!(n_samples > 0, "number of samples for training most be positive");
             
             let split_points: Vec<i64> = self.get_split_train_dev_test_sizes(n_samples);
-            let indices: Tensor = Tensor::randperm(n_samples, (Kind::Int8, Device::Cpu));
+            let indices: Tensor = Tensor::randperm(n_samples, (Kind::Int64, Device::Cpu));
             let split_indices: Vec<Tensor> = indices.split_with_sizes(&split_points, 0);
             split_indices
         }
@@ -290,7 +290,7 @@ pub mod data_loading {
             let mut splits: Vec<Vec<String>> = Vec::new();
             for indices in split_indices {
 
-                let indices_vec = TryInto::<Vec<i8>>::try_into(indices)?;
+                let indices_vec = TryInto::<Vec<i64>>::try_into(indices)?;
                 let split = indices_vec.iter().map(|i| sentences.get(*i as usize).unwrap().to_owned()).collect::<Vec<String>>();
                 splits.push(split);
             }

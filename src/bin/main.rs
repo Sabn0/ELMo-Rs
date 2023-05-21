@@ -76,7 +76,7 @@ fn main() {
 
     let mut iters = splits.iter().map(|split| {
         
-        let indices = TryInto::<Vec<i8>>::try_into(split).unwrap();
+        let indices = TryInto::<Vec<i64>>::try_into(split).unwrap();
         let (xs, ys): (Vec<_>, Vec<_>) = indices.iter()
         .map(|i| elmo_text_loader.get_example(*i as usize).unwrap())
         .unzip();
