@@ -46,7 +46,7 @@ pub mod data_loading {
         pub fn shuffle(&mut self) -> &mut Loader {
 
             let n_samples = self.xs.len();
-            let permutation = Vec::<i64>::from(Tensor::randperm(n_samples as i64, (Kind::Int64, self.device)));
+            let permutation = Vec::<i64>::try_from(Tensor::randperm(n_samples as i64, (Kind::Int64, self.device))).unwrap();
 
             self.xs = (&permutation).into_iter().map(|i| self.xs.get(*i as usize).unwrap().shallow_clone()).collect::<Vec<Tensor>>();
             self.ys = (&permutation).into_iter().map(|i| self.ys.get(*i as usize).unwrap().shallow_clone()).collect::<Vec<Tensor>>();
@@ -60,8 +60,8 @@ pub mod data_loading {
             let xs = Tensor::concat(&self.xs, 0); // of shape (N_tokens, max_token_length)
             let ys = Tensor::concat(&self.ys, 0); // of shape (N_tokens)
 
-            let dims_xs = Vec::<i64>::from(xs.internal_shape_as_tensor());
-            let dims_ys = Vec::<i64>::from(ys.internal_shape_as_tensor());
+            let dims_xs = Vec::<i64>::try_from(xs.internal_shape_as_tensor()).unwrap();
+            let dims_ys = Vec::<i64>::try_from(ys.internal_shape_as_tensor()).unwrap();
             assert_eq!(dims_xs[0], dims_ys[0]);
             
             StreamLoader { 
@@ -201,7 +201,7 @@ pub mod data_loading {
             let unk_id = self.token2int.get(&self.str_unk).expect("didn't find unk symbol");
             let mut labels = (&tokens).iter().map(|t| {
                 let label = self.token2int.get(t).cloned().unwrap_or(*unk_id);
-                Tensor::of_slice(&[label as u8])
+                Tensor::from_slice(&[label as u8])
             } ).collect::<Vec<Tensor>>();
 
             // move each token from string of chars to int encoding of fixed maximal length
@@ -213,7 +213,7 @@ pub mod data_loading {
                 token_vec.push(self.char_end);
 
                 let char_ids = map_chars_to_ints(&token_vec);
-                let char_tensor = Tensor::of_slice(&char_ids);
+                let char_tensor = Tensor::from_slice(&char_ids);
                 inputs.push(char_tensor);
             }
 
@@ -230,7 +230,9 @@ pub mod data_loading {
             // move to tensor
             let inputs_tensor = Tensor::concat(&inputs, 0).reshape(&[-1, self.max_len_token.unwrap() as i64]);
             let labels_tensor = Tensor::concat(&labels, 0).reshape(&[-1]);
-            assert_eq!(Vec::<i64>::from(inputs_tensor.internal_shape_as_tensor())[0], Vec::<i64>::from(labels_tensor.internal_shape_as_tensor())[0]);
+            let input_length = Vec::<i64>::try_from(inputs_tensor.internal_shape_as_tensor()).unwrap()[0];
+            let labels_length = Vec::<i64>::try_from(labels_tensor.internal_shape_as_tensor()).unwrap()[0];
+            assert_eq!(input_length, labels_length);
             
             // inputs_tensor is of shape (sentence_length, max_token_length)
             // labels_tnesor is of shape (sentence_length)

@@ -94,7 +94,8 @@ fn main() {
                 params.learning_rate, 
                 params.max_iter, 
                 model,
-                &mut vars) 
+                &mut vars,
+                params.clip_norm) 
     {
         panic!("{}", e);
     };

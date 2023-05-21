@@ -1,6 +1,7 @@
 
 use std::iter::zip;
 use std::ops::Mul;
+use std::time::Instant;
 
 use tch::{nn, Tensor, IndexOp};
 use tch::nn::{ModuleT, RNN, ConvConfigND};
@@ -38,7 +39,7 @@ impl ModuleT for CnnBlock {
         
         // xs is of shape (1, token_length, embedding_dim)
         let dims = xs.internal_shape_as_tensor();
-        let dims = Vec::<i64>::from(dims);
+        let dims = Vec::<i64>::try_from(dims).unwrap();
         assert!(3 == dims.len());
 
         let token_length = dims[1];
@@ -54,14 +55,14 @@ impl ModuleT for CnnBlock {
         let conv_out = xs.apply(&self.conv);
 
         // tanh doesn't change dims, (h, 1, l-w+1), then move to (h, l-w+1)
-        assert!(Vec::<i64>::from(conv_out.internal_shape_as_tensor())[1] == 1);
+        assert!(Vec::<i64>::try_from(conv_out.internal_shape_as_tensor()).unwrap()[1] == 1);
         let act_out = conv_out.tanh().squeeze_dim(1);
          
          // max_pool1d moves xs : (h, l-w+1) => (h, 1)
         let pool_out = act_out.max_pool1d(&[pool_kernel], &[1], &[0], &[1], false);
 
         // the output should be (h)
-        assert!(Vec::<i64>::from(pool_out.internal_shape_as_tensor())[1] == 1);
+        assert!(Vec::<i64>::try_from(pool_out.internal_shape_as_tensor()).unwrap()[1] == 1);
         let out = pool_out.squeeze_dim(1);
 
         out
@@ -159,7 +160,7 @@ impl ModuleT for CharLevelNet {
 
         // xs is of shape (sequence_length, token_length),      batch_size = fixed number of words
         let dims = xs.internal_shape_as_tensor();
-        let dims = Vec::<i64>::from(dims);
+        let dims = Vec::<i64>::try_from(dims).unwrap();
         let sequence_length = &dims[0];
         
         // iterate over tokens
@@ -310,14 +311,18 @@ impl ModuleT for ELMo {
         
         // xs is of shape (sequence_length, token_length),          batch_size = fixed sequence of words
         // move through char enconding => (sequence_length, out_linear)
+        let timer = Instant::now();
         let xs_embedded = &self.char_level.forward_t(xs, train);
+        println!("cnn part : {}", timer.elapsed().as_nanos());
 
         // xs_embedded should be (sequence_length, out_linear)
         let xs_embedded_flip = Tensor::flip(&xs_embedded.to_owned().shallow_clone(), &[0]);
 
         // both should be (n_lstm_layers, sequence_length, out_linear)
+        let timer = Instant::now();
         let forward_lm_outs = self.forward_lm.forward_t(xs_embedded, train);
         let backward_lm_outs = self.backward_lm.forward_t(&xs_embedded_flip, train);
+        println!("rnn part : {}", timer.elapsed().as_nanos());
 
         // the elmo representation is a combination of all the outputs (2L) + xs
         // for the simple case, I take the sum of xs and the two last outputs

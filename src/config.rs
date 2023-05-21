@@ -30,7 +30,8 @@ pub struct JsonELMo {
     pub dropout: f64,
     pub device: Device,
     pub max_iter: i64,
-    pub learning_rate: f64
+    pub learning_rate: f64,
+    pub clip_norm: f64
 }
 
 impl Display for JsonELMo {
@@ -51,7 +52,8 @@ impl Display for JsonELMo {
         device: {:?},
         max_iter: {},
         learning_rate: {},
-        batch_size: {}",
+        batch_size: {},
+        clip_norm: {}",
         self.token_vocab_size,
         self.char_vocab_size, 
         self.min_count, 
@@ -67,7 +69,9 @@ impl Display for JsonELMo {
         self.device, 
         self.max_iter, 
         self.learning_rate,
-        self.batch_size)
+        self.batch_size,
+        self.clip_norm
+    )
     }
 }
 
@@ -136,6 +140,7 @@ impl Conigure for ConfigElmo {
             dropout: 0.1,
             max_iter: 10,
             batch_size: 128,
+            clip_norm: 3.0,
             learning_rate: 0.001,               // maybe different
             device: Device::cuda_if_available(),
             char_start: '$',
@@ -227,6 +232,9 @@ impl Conigure for ConfigElmo {
         }
         if let Ok(learning_rate) = validate_float("learning_rate") {
             params.learning_rate = learning_rate;
+        }
+        if let Ok(clip_norm) = validate_float("clip_norm") {
+            params.clip_norm = clip_norm;
         }
         if let Ok(out_channels) = validate_vec("out_channels") {
             params.out_channels = out_channels;
