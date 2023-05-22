@@ -2,7 +2,6 @@
 
 
 use std::env;
-
 use elmo_trainer::ConfigElmo;
 use elmo_trainer::ELMoText;
 use elmo_trainer::Loader;
@@ -36,52 +35,21 @@ fn main() {
     // preprocess of sentences
     let mut sentences = files_handling::load_sentences(&params.corpus_file).unwrap();
     let mut preprocessor = Preprocessor::new();
-    let (token2int,char2int) = preprocessor.preprocess(
-        &mut sentences,
-        &mut params.token_vocab_size,
-        &mut params.char_vocab_size,
-        params.min_count, 
-        params.char_start, 
-        params.char_end,
-        params.char_unk,
-        params.str_unk.as_str()
-    );
+    let (token2int,char2int) = preprocessor.preprocess(&mut sentences, &mut params);
     // -- end of preprocessing sentences
     //
 
     //
     // Create an ELM0 textual loader - data builder that moves data from strings to ints
     let n_samples = (&sentences).len() as i64;
-    let elmo_text_loader = ELMoText::new(
-        sentences, 
-        token2int, 
-        char2int, 
-        Some(params.max_len_token as usize), 
-        params.char_start, 
-        params.char_end,
-        params.char_unk,
-        params.str_unk.to_string()
-    );
+    let elmo_text_loader = ELMoText::new(sentences, token2int, char2int, &params);
     // -- end of data building --
     //
 
     //
     // Create an instance of the ELMo model
     let mut vars = nn::VarStore::new(params.device);
-    let model = ELMo::new(
-        &vars.root(),
-        params.n_lstm_layers,
-        params.in_dim,
-        params.hidden_dim,
-        params.char_vocab_size,
-        params.token_vocab_size, 
-        params.char_embedding_dim, 
-        params.in_channels, 
-        params.out_channels, 
-        params.kernel_size, 
-        params.highways, 
-        params.dropout
-    );
+    let model = ELMo::new(&vars.root(), &params);
     // -- end of instantiating model --
     //
 
@@ -106,15 +74,16 @@ fn main() {
     let mut trainset_iter = iters.next().unwrap();
     let mut devset_iter = iters.next();
     let elmo_train = ElmoTrainer::new();
+    
     if let Err(e) = elmo_train.run_training(
                 &mut trainset_iter, 
                 &mut devset_iter, 
                 params.learning_rate, 
                 params.max_iter, 
-                model,
+                &model,
                 &mut vars,
                 params.clip_norm,
-                params.token_vocab_size
+                &params.output_file.as_str()
     ) {
         panic!("{}", e)
     };
@@ -123,7 +92,12 @@ fn main() {
 
     // 
     // do testing on test set with saved model
+    vars.load(&params.output_file.as_str()).unwrap();
+    let mut testset_iter = iters.next().unwrap();
+    assert!(iters.next().is_none());
 
+    let test_acc = elmo_train.run_testing(&mut testset_iter, &model).unwrap();
+    println!("got {} acc on test set", test_acc);
     // -- end of testing --
     //
 }   
