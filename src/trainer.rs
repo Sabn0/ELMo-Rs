@@ -8,16 +8,15 @@ pub mod training {
     use std::ops::Add;
     use std::time::Instant;
     use tch::{Tensor, Kind};
-    use tch::data::Iter2;
     use tch::nn::{VarStore, ModuleT, Optimizer, Adam, OptimizerConfig};
     use crate::{ELMo, Loader};
 
     pub trait TrainModel {
         
         // train forces (x,y) labels for now (classification)
-        fn train(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, model: &impl ModuleT, vars: &mut VarStore, clip_norm: f64, vocab_size: i64) -> Result<(), Box<dyn Error>>;
-        fn validate(&self, devset_iter: &mut Loader, model: &impl ModuleT, clip_norm: f64, vocab_size: i64) -> (f64, f64);
-        fn step(&self, xs: Tensor, ys: Tensor, model: &impl ModuleT, opt: Option<&mut Optimizer>, loss: &mut f64, accuracy: &mut f64, clip_norm: f64, vocab_size: i64);       
+        fn train(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, model: &impl ModuleT, vars: &mut VarStore, clip_norm: f64, save_model: &str) -> Result<(), Box<dyn Error>>;
+        fn validate(&self, devset_iter: &mut Loader, model: &impl ModuleT) -> (f64, f64);
+        fn step(&self, xs: Tensor, ys: Tensor, model: &impl ModuleT, loss: &mut f64, accuracy: &mut f64, opt_vars: Option<(&mut Optimizer, f64)>);       
         fn predict(&self, targets: &Tensor, logits: &Tensor) -> f64;
         fn init_optimizer(&self, vars: &VarStore, learning_rate: f64) -> Optimizer;
         
@@ -40,24 +39,23 @@ pub mod training {
             
         }
 
-        pub fn run_training(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, model: ELMo, vars: &mut VarStore, clip_norm: f64, vocab_size: i64) -> Result<(), Box<dyn Error>> {
+        pub fn run_training(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, model: &ELMo, vars: &mut VarStore, clip_norm: f64, save_model: &str) -> Result<(), Box<dyn Error>> {
 
-            self.train(trainset_iter, devset_iter, learning_rate, max_iter, &model, vars, clip_norm, vocab_size)?;
+            self.train(trainset_iter, devset_iter, learning_rate, max_iter, model, vars, clip_norm, save_model)?;
             Ok(())
         }
 
-        pub fn run_testing(&self, _testset_iter: &mut Iter2) {
-            todo!()
+        pub fn run_testing(&self, testset_iter: &mut Loader, model: &ELMo) -> Result<f64, Box<dyn Error>> {
+            let (_, acc) = self.validate(testset_iter, model);
+            Ok(acc)
         }
 
     }
 
     impl TrainModel for ElmoTrainer {
         
-        fn train(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, model: &impl ModuleT, vars: &mut VarStore, clip_norm: f64, vocab_size: i64) -> Result<(), Box<dyn Error>> {
+        fn train(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, model: &impl ModuleT, vars: &mut VarStore, clip_norm: f64, save_model: &str) -> Result<(), Box<dyn Error>> {
             
-            //tch::set_num_threads(4);
-
             let mut opt = self.init_optimizer(&vars, learning_rate);
             let mut train_progress = match devset_iter {
                 Some(_) => TrainingProgress::init_with_dev(),
@@ -76,7 +74,7 @@ pub mod training {
 
                     // xs of shape (batch_size, seq_length, max_token_length)
                     // ys of shape (batch_size, seq_length)
-                    self.step(xs, ys, model, Some(&mut opt), &mut epoch_loss, &mut epoch_accuracy, clip_norm, vocab_size);
+                    self.step(xs, ys, model, &mut epoch_loss, &mut epoch_accuracy, Some((&mut opt, clip_norm)));
                     total += batch_size as f64;
                 }
 
@@ -92,7 +90,7 @@ pub mod training {
                 if devset_iter.is_some() {
 
                     let dev_iter = devset_iter.as_mut().unwrap();
-                    let (dev_loss, dev_accuracy) = self.validate(dev_iter, model, clip_norm, vocab_size);
+                    let (dev_loss, dev_accuracy) = self.validate(dev_iter, model);
                     progress_entry.dev_loss = Some(vec![dev_loss]);
                     progress_entry.dev_accuracy = Some(vec![dev_accuracy]);
 
@@ -109,29 +107,31 @@ pub mod training {
             }
 
             // save model?
+            vars.save(save_model)?;
 
             Ok(())
 
         
         }
 
-        fn step(&self, xs: Tensor, ys: Tensor, model: &impl ModuleT, opt: Option<&mut Optimizer>, loss: &mut f64, accuracy: &mut f64, _clip_norm: f64, vocab_size: i64) {
-
-            let train_mode = match &opt {
+        fn step(&self, xs: Tensor, ys: Tensor, model: &impl ModuleT, loss: &mut f64, accuracy: &mut f64, opt_vars: Option<(&mut Optimizer, f64)>) {
+            
+            let train_mode = match &opt_vars {
                 Some(_) => true,
                 None => false
             };
 
             let logits = model.forward_t(&xs, train_mode); // move throught model...
-            // logits of shape (batch_size, seq_length, token_vocab_size)
-            // cross_entropy excepts inputs of 2dim, so I merge batch_size + seq_length for loss comp
-            let logits = logits.reshape(&[-1, vocab_size]);
+            // logits of shape (batch_size * seq_length, token_vocab_size), match the targets to that shape
             let targets = ys.reshape(&[-1]).totype(Kind::Int64);
 
             let batch_loss = logits.cross_entropy_for_logits(&targets);
 
             if train_mode {
-                opt.unwrap().backward_step(&batch_loss);
+                let opt_vars = opt_vars.unwrap();
+                let opt = opt_vars.0;
+                let _clip_norm = opt_vars.1;
+                opt.backward_step(&batch_loss);
             }
 
             *loss += f64::try_from(batch_loss.mean(Kind::Float)).unwrap();
@@ -139,7 +139,7 @@ pub mod training {
 
         }
 
-        fn validate(&self, devset_iter: &mut Loader, model: &impl ModuleT, clip_norm: f64, vocab_size: i64) -> (f64, f64) {
+        fn validate(&self, devset_iter: &mut Loader, model: &impl ModuleT) -> (f64, f64) {
 
             let mut total = 0.0;
             let mut loss = 0.0;
@@ -151,7 +151,7 @@ pub mod training {
                 // already in device
                 // xs of shape (sequence_length, max_token_length)
                 // ys of shape (sequence_length)                
-                self.step(xs, ys, model, None, &mut loss, &mut accuracy, clip_norm, vocab_size);
+                self.step(xs, ys, model, &mut loss, &mut accuracy, None);
                 total += batch_size as f64;
             }
 
