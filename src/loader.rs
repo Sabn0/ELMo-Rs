@@ -15,6 +15,8 @@ pub mod data_loading {
     use tch::Kind;
     use tch::Tensor;
 
+    use crate::config::JsonELMo;
+
     // a loader similar to Iter2 of tch
     pub struct Loader {
         xs: Vec<Tensor>,
@@ -162,10 +164,10 @@ pub mod data_loading {
     }
 
     pub struct ELMoText {
-        examples: Vec<String>,
+        sentences: Vec<String>,
         token2int: HashMap<String, usize>,
         char2int: HashMap<char, usize>,
-        max_len_token: Option<usize>,
+        max_len_token: usize,
         char_start: char,
         char_end: char,
         char_unk: char,
@@ -173,17 +175,17 @@ pub mod data_loading {
     }
 
     impl ELMoText {
-        pub fn new(examples: Vec<String>, token2int: HashMap<String, usize>, char2int: HashMap<char, usize>, 
-            max_len_token: Option<usize>, char_start: char, char_end: char, char_unk: char, str_unk: String) -> Self {
+        pub fn new(sentences: Vec<String>, token2int: HashMap<String, usize>, char2int: HashMap<char, usize>, params: &JsonELMo) -> Self {
+            
             Self {
-                examples: examples,
+                sentences: sentences,
                 token2int: token2int,
                 char2int: char2int,
-                max_len_token: max_len_token,
-                char_start: char_start,
-                char_end: char_end,
-                char_unk: char_unk,
-                str_unk: str_unk
+                max_len_token: params.max_len_token as usize,
+                char_start: params.char_start,
+                char_end: params.char_end,
+                char_unk: params.char_unk,
+                str_unk: params.str_unk.to_string()
             }
         }
     }
@@ -193,7 +195,7 @@ pub mod data_loading {
         type Error = Box<dyn Error>;
 
         fn get_len(&self) -> u64 { 
-            self.examples.len() as u64
+            self.sentences.len() as u64
         }
 
         fn get_example(&self, index: usize) -> Result<(Tensor, Tensor), Self::Error> {
@@ -205,7 +207,7 @@ pub mod data_loading {
             // the output is of shape (n, 1), n is the length of the sentence.
 
             let mut inputs: Vec<Tensor> = Vec::new();
-            let example = self.examples.get(index).ok_or("example index not found in examples indices")?;            
+            let example = self.sentences.get(index).ok_or("example index not found in examples indices")?;            
 
             let map_chars_to_ints = | token: &Vec<char>| -> Vec<i64> {
 
@@ -224,18 +226,13 @@ pub mod data_loading {
                 // pad done with ' '
                 let token_len = char_ids.len();
                 let pad = *self.char2int.get(&' ').expect("didn't find pad symbol") as i64;
-                match self.max_len_token {
-                    None => {},
-                    Some(max_len_token) => {
-                        if max_len_token <= token_len {
-                            char_ids.truncate(max_len_token);
-                        } else {
-                            for _ in token_len..max_len_token {
-                                char_ids.push(pad);
-                            }
-                        }
+                if self.max_len_token <= token_len {
+                    char_ids.truncate(self.max_len_token);
+                } else {
+                    for _ in token_len..self.max_len_token {
+                        char_ids.push(pad);
                     }
-                };
+                }
                 char_ids
 
             };
@@ -271,7 +268,7 @@ pub mod data_loading {
             assert_eq!(inputs.len(), labels.len());
 
             // move to tensor
-            let inputs_tensor = Tensor::concat(&inputs, 0).reshape(&[-1, self.max_len_token.unwrap() as i64]);
+            let inputs_tensor = Tensor::concat(&inputs, 0).reshape(&[-1, self.max_len_token as i64]);
             let labels_tensor = Tensor::concat(&labels, 0).reshape(&[-1]);
             let input_length = Vec::<i64>::try_from(inputs_tensor.internal_shape_as_tensor()).unwrap()[0];
             let labels_length = Vec::<i64>::try_from(labels_tensor.internal_shape_as_tensor()).unwrap()[0];
