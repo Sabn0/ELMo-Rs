@@ -74,17 +74,7 @@ fn main() {
     let mut trainset_iter = iters.next().unwrap();
     let mut devset_iter = iters.next();
     let elmo_train = ElmoTrainer::new();
-    
-    if let Err(e) = elmo_train.run_training(
-                &mut trainset_iter, 
-                &mut devset_iter, 
-                params.learning_rate, 
-                params.max_iter, 
-                &model,
-                &mut vars,
-                params.clip_norm,
-                &params.output_file.as_str()
-    ) {
+    if let Err(e) = elmo_train.run_training(&mut trainset_iter, &mut devset_iter, &model, &mut vars, &params) {
         panic!("{}", e)
     };
     // -- end of training process --

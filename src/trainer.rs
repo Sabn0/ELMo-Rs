@@ -9,6 +9,7 @@ pub mod training {
     use std::time::Instant;
     use tch::{Tensor, Kind};
     use tch::nn::{VarStore, ModuleT, Optimizer, Adam, OptimizerConfig};
+    use crate::config::JsonELMo;
     use crate::{ELMo, Loader};
 
     pub trait TrainModel {
@@ -39,9 +40,9 @@ pub mod training {
             
         }
 
-        pub fn run_training(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, model: &ELMo, vars: &mut VarStore, clip_norm: f64, save_model: &str) -> Result<(), Box<dyn Error>> {
+        pub fn run_training(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, model: &ELMo, vars: &mut VarStore, params: &JsonELMo) -> Result<(), Box<dyn Error>> {
 
-            self.train(trainset_iter, devset_iter, learning_rate, max_iter, model, vars, clip_norm, save_model)?;
+            self.train(trainset_iter, devset_iter, params.learning_rate, params.max_iter, model, vars, params.clip_norm, &params.output_file)?;
             Ok(())
         }
 
