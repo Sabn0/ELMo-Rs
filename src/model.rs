@@ -266,7 +266,8 @@ pub struct ELMo {
     backward_lm: UniLM,
     to_vocab: nn::Linear,
     n_lstm_layers: i64,
-    char_level: CharLevelNet
+    char_level: CharLevelNet,
+    token_vocab_size: i64
 }
 
 impl ELMo {
@@ -294,7 +295,8 @@ impl ELMo {
             backward_lm: backward_lm,
             to_vocab: to_vocab,
             n_lstm_layers: n_lstm_layers,
-            char_level: char_level
+            char_level: char_level,
+            token_vocab_size: token_vocab_size
         }
 
 
@@ -326,8 +328,11 @@ impl ModuleT for ELMo {
         let forward_out = forward_last.apply(&self.to_vocab);
         let backward_out = backward_last.apply(&self.to_vocab);
 
-        let out = xs_embedded_out + forward_out + backward_out;
-        out // (batch_size, seq_length, token_vocab_size)
+        // (batch_size, seq_length, token_vocab_size), move to (batch_size * seq_length, token_vocab_size) for loss computation
+        let out = xs_embedded_out + forward_out + backward_out; 
+        let logits = out.reshape(&[-1, self.token_vocab_size]);
+
+        logits
 
     }
 }
