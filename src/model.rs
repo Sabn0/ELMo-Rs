@@ -5,6 +5,8 @@ use std::ops::Mul;
 use tch::{nn, Tensor, IndexOp};
 use tch::nn::{ModuleT, RNN, ConvConfigND};
 
+use crate::config::JsonELMo;
+
 
 // If a word is of length k charachters, the convolution is What's described as
 // a narrow convolution between a charachter within a word, C_k \in (d, l),  
@@ -271,20 +273,22 @@ pub struct ELMo {
 }
 
 impl ELMo {
-    pub fn new(vars: &nn::Path, 
-        n_lstm_layers: i64, 
-        in_dim: i64, 
-        hidden_dim: i64,
-        char_vocab_size: i64,
-        token_vocab_size: i64,
-        char_embedding_dim: i64,
-        in_channels: i64,
-        out_channels: Vec<i64>,
-        kernel_size: Vec<i64>,
-        highways: i64,
-        dropout: f64
+    pub fn new(vars: &nn::Path, params: &JsonELMo
     ) -> Self {
 
+        // unroll parameters
+        let n_lstm_layers = params.n_lstm_layers;
+        let in_dim = params.in_dim;
+        let hidden_dim = params.hidden_dim;
+        let char_vocab_size= params.char_vocab_size;
+        let token_vocab_size = params.token_vocab_size;
+        let char_embedding_dim = params.char_embedding_dim;
+        let in_channels = params.in_channels;
+        let out_channels = params.out_channels.clone();
+        let kernel_size = params.kernel_size.clone();
+        let highways = params.highways;
+        let dropout = params.dropout;
+        
         let char_level = CharLevelNet::new(vars, char_vocab_size, char_embedding_dim, in_channels, out_channels, kernel_size, highways, in_dim);
         let forward_lm = UniLM::new(vars, n_lstm_layers, in_dim, hidden_dim, dropout);
         let backward_lm = UniLM::new(vars, n_lstm_layers, in_dim, hidden_dim, dropout);
