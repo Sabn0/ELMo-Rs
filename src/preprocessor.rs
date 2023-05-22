@@ -1,9 +1,4 @@
 
-// This module handles data preprocessing, matching to the data in the Chelba et al., 2014 benchmark
-// Given a vector of strings (the input corpus), the preprocessing stage includes the removal of identical
-// sentences, adding SOS and EOS, mapping words under 3 occurrences to UNK, (tokenization?
-// randomization?). then, tokenizing done by split and vocabulary is made by tokens. The new sentences vector
-// is the output of this preprocessor. Order randomization will be done in the training stage before epochs.
 
 pub mod do_preprocess {
 
@@ -11,6 +6,8 @@ pub mod do_preprocess {
 
     use counter::Counter;
     use itertools::Itertools;
+
+    use crate::config::JsonELMo;
 
     pub trait CollectT {
         type Item;
@@ -82,15 +79,16 @@ pub mod do_preprocess {
         }
 
 
-        pub fn preprocess(&mut self, sentences: &mut Vec<String>,
-             token_vocab_size: &mut i64,
-             char_vocab_size: &mut i64,
-             min_count: i64,
-             char_start: char,
-             char_end: char,
-             char_unk: char,
-             str_unk: &str
-        ) -> (HashMap<String, usize>, HashMap<char, usize>) {
+        pub fn preprocess(&mut self, sentences: &mut Vec<String>, params: &mut JsonELMo) -> (HashMap<String, usize>, HashMap<char, usize>) {
+
+            // extract elmo parameters
+            let token_vocab_size = &mut params.token_vocab_size;
+            let char_vocab_size = &mut params.char_vocab_size;
+            let min_count = params.min_count;
+            let char_start = params.char_start;
+            let char_end = params.char_end;
+            let char_unk = params.char_unk;
+            let str_unk = &params.str_unk;
 
             // strip duplicated sentences
             self.unique(sentences);
