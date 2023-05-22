@@ -21,8 +21,8 @@ pub mod training {
         fn predict(&self, targets: &Tensor, logits: &Tensor) -> f64;
         fn init_optimizer(&self, vars: &VarStore, learning_rate: f64) -> Optimizer;
         
-        fn break_early(&self, _epoch_loss: f64, _dev_loss: f64) -> bool { 
-            false 
+        fn break_early(&self, _train_progress: &TrainingProgress) -> bool { 
+            false
         }
         
         fn save_model(&self, out_path: &str, vars: &VarStore) -> Result<(), Box<dyn Error>> {
@@ -55,7 +55,7 @@ pub mod training {
 
     impl TrainModel for ElmoTrainer {
         
-        fn train(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, model: &impl ModuleT, vars: &mut VarStore, clip_norm: f64, save_model: &str) -> Result<(), Box<dyn Error>> {
+        fn train(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, model: &impl ModuleT, vars: &mut VarStore, clip_norm: f64, output_file: &str) -> Result<(), Box<dyn Error>> {
             
             let mut opt = self.init_optimizer(&vars, learning_rate);
             let mut train_progress = match devset_iter {
@@ -95,7 +95,7 @@ pub mod training {
                     progress_entry.dev_loss = Some(vec![dev_loss]);
                     progress_entry.dev_accuracy = Some(vec![dev_accuracy]);
 
-                    if self.break_early(epoch_loss, dev_loss) {
+                    if self.break_early(&train_progress) {
                         break;
                     }
 
@@ -108,7 +108,7 @@ pub mod training {
             }
 
             // save model?
-            vars.save(save_model)?;
+            self.save_model(output_file, vars)?;
 
             Ok(())
 
@@ -179,11 +179,33 @@ pub mod training {
 
         }
 
+        fn break_early(&self, train_progress: &TrainingProgress) -> bool {
+
+            let epochs = &train_progress.epoch;
+            let n = epochs.len();
+            if n <= 1 {
+                return false
+            }
+
+            let diff_train_loss = train_progress.epoch_loss.get(n-1).unwrap() - train_progress.epoch_loss.get(n-2).unwrap();
+
+            while let Some(dev_loss) = &train_progress.dev_loss {
+                let diff_dev_loss = dev_loss.get(n-1).unwrap() - dev_loss.get(n-2).unwrap();
+                if diff_train_loss < 0.0 && diff_dev_loss > 0.0 {
+                    return true;
+                } else {
+                    return false;
+                }
+            }
+
+            false
+        }
+
     }
 
 
     #[derive(Debug)]
-    struct TrainingProgress {
+    pub struct TrainingProgress {
         epoch: Vec<i64>,
         epoch_loss: Vec<f64>,
         epoch_accuracy: Vec<f64>,
