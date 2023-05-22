@@ -9,7 +9,7 @@ use std::{fs::{self}, error::Error, fmt::Display};
 #[derive(Clone, Debug)]
 pub struct JsonELMo {
     pub corpus_file: String,
-    pub output_dir: String,
+    pub output_file: String,
     pub token_vocab_size: i64,
     pub char_vocab_size: i64,
     pub min_count: i64,
@@ -95,6 +95,12 @@ impl ConfigElmo {
         let json = ConfigElmo::read_json(&args[1]);
         let params = ConfigElmo::validate(json)?;
 
+        // create output directory if not exists
+        let output_dir = params.output_file.rsplit_once('/');
+        if let Some((dir_path, _)) = output_dir {
+            fs::create_dir_all(dir_path)?;
+        } // else is the case in which the file doesn't have prior folder to create
+
         Ok (
             Self {
                 params: params
@@ -111,7 +117,7 @@ impl ConfigElmo {
 pub trait Conigure {
     type Item;
     fn read_json(json_path: &String) -> Value;
-    fn defaults(corpus_file: String, output_dir: String) -> Self::Item;
+    fn defaults(corpus_file: String, output_file: String) -> Self::Item;
     fn validate(json: Value) -> Result<Self::Item, Box<dyn Error>>;
 }
 
@@ -125,7 +131,7 @@ impl Conigure for ConfigElmo {
         json
     }
 
-    fn defaults(corpus_file: String, output_dir: String) -> Self::Item {
+    fn defaults(corpus_file: String, output_file: String) -> Self::Item {
 
         Self::Item {
             token_vocab_size: 300_000,
@@ -152,7 +158,7 @@ impl Conigure for ConfigElmo {
             char_unk: '~',
             str_unk: String::from("UNK"),
             corpus_file: corpus_file,
-            output_dir: output_dir,
+            output_file: output_file,
         }
 
     }
@@ -191,8 +197,8 @@ impl Conigure for ConfigElmo {
 
         // validate input and output in json - most be given
         let corpus_file = validate_str("corpus_file").to_string();
-        let output_dir = validate_str("output_dir").to_string();
-        let mut params = ConfigElmo::defaults(corpus_file, output_dir);
+        let output_file = validate_str("output_file").to_string();
+        let mut params = ConfigElmo::defaults(corpus_file, output_file);
 
         // validate optional input parameters
         if let Ok(token_vocab_size) = validate_positive_int("token_vocab_size") {
