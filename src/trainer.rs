@@ -56,6 +56,8 @@ pub mod training {
         
         fn train(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, model: &impl ModuleT, vars: &mut VarStore, clip_norm: f64, vocab_size: i64) -> Result<(), Box<dyn Error>> {
             
+            //tch::set_num_threads(4);
+
             let mut opt = self.init_optimizer(&vars, learning_rate);
             let mut train_progress = match devset_iter {
                 Some(_) => TrainingProgress::init_with_dev(),

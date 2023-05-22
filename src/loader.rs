@@ -101,7 +101,6 @@ pub mod data_loading {
             }
 
             let slice = self.batch_size * self.seq_length;
-            println!("managing slice: {}", slice);
             let mut end_batch = self.start_index + slice;
 
             // that handles last smaller batch
