@@ -16,11 +16,12 @@ use tch::nn;
 
 
 fn main() {
-
+    
     //
     // loading training parameteres
     println!("entering program...");
     let args: Vec<String> = env::args().collect();
+    //let args = vec!["".to_string(), "args.json".to_string()];
     
     println!("building parameters...");
     let mut params = match ConfigElmo::new(&args) {

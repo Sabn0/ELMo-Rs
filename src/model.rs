@@ -2,11 +2,11 @@
 use std::iter::zip;
 use std::ops::Mul;
 
-use tch::{nn, Tensor, IndexOp};
-use tch::nn::{ModuleT, RNN, ConvConfigND};
-
+use tch::nn::init::DEFAULT_KAIMING_UNIFORM;
+use tch::{nn, Tensor, IndexOp, Device};
+use tch::nn::{ModuleT, RNN, Init, LinearConfig};
+// ConvConfigND
 use crate::config::JsonELMo;
-
 
 // If a word is of length k charachters, the convolution is What's described as
 // a narrow convolution between a charachter within a word, C_k \in (d, l),  
@@ -23,12 +23,13 @@ impl CnnBlock {
     fn new(vars: &nn::Path, in_channels: i64, out_channels: i64, kernel_size: i64, embedding_dim: i64) -> Self {
 
         // hadnling number of filters h as output channels.
-        let conv = nn::conv(vars, in_channels, out_channels, [embedding_dim, kernel_size], ConvConfigND::default());
-        let kernel_size = kernel_size;
 
+        let conv = nn::conv(vars / "conv", in_channels, out_channels, [embedding_dim, kernel_size], Default::default());
+        let kernel_size = kernel_size;
+        
         Self {
             conv: conv,
-            kernel_size: kernel_size
+            kernel_size: kernel_size,
         }
 
     }
@@ -54,14 +55,14 @@ impl ModuleT for CnnBlock {
         // self.conv.w is of shape (h, 1, d, w)
         // conv does (h, 1, d, w) * (batch_size, 1, d, l) => (batch_size, h, 1, l-w+1)
         let conv_out = reshaped_xs.apply(&self.conv);
-
+        
         // tanh doesn't change dims, (batch_size, h, 1, l-w+1), then move to (batch_size, h, l-w+1)
         assert!(Vec::<i64>::try_from(conv_out.internal_shape_as_tensor()).unwrap()[2] == 1);
         let act_out = conv_out.tanh().squeeze_dim(2);
          
          // max_pool1d moves xs : (batch_size, h, l-w+1) => (batch_size, h, 1)
         let pool_out = act_out.max_pool1d(&[pool_kernel], &[1], &[0], &[1], false);
-
+        
         // the output should be (batch_size, h)
         assert!(Vec::<i64>::try_from(pool_out.internal_shape_as_tensor()).unwrap()[2] == 1);
         let out = pool_out.squeeze_dim(2);
@@ -80,8 +81,8 @@ impl Highway {
     
     fn new(vars: &nn::Path, in_dim: i64, out_dim: i64) -> Self {
 
-        let w_t = nn::linear(vars, in_dim, out_dim, Default::default());
-        let w_h = nn::linear(vars, in_dim, out_dim, Default::default());
+        let w_t = nn::linear(vars / "w_t", in_dim, out_dim, Default::default());
+        let w_h = nn::linear(vars / "w_h", in_dim, out_dim, Default::default());
     
         Self {
             w_t: w_t,
@@ -93,13 +94,13 @@ impl Highway {
 
 impl ModuleT for Highway {
     fn forward_t(&self, xs: &Tensor, _train: bool) -> Tensor {
-
+        
         let t = xs.apply(&self.w_t).sigmoid();
         let transform_part = xs.apply(&self.w_h).relu().mul(&t);
         let carry_part = xs.mul(1-t);
         let out: Tensor = transform_part + carry_part;
         out
-
+        
         // xs should remain (batch_size, total_filters) from input to end
     }
 }
@@ -109,7 +110,8 @@ pub struct CharLevelNet {
     embedding: nn::Embedding,
     conv_blocks: Vec<CnnBlock>,
     highways: Vec<Highway>,
-    out_linear: nn::Linear
+    out_linear: nn::Linear,
+    device: Device
 }
 
 impl CharLevelNet {
@@ -125,7 +127,7 @@ impl CharLevelNet {
             // out_channels = number of filters
             // kernel_size = matching kernel width
 
-        let embedding = nn::embedding(vars, vocab_size,  embedding_dim, Default::default());
+        let embedding = nn::embedding(vars / "embed", vocab_size, embedding_dim, Default::default());
         let mut conv_blocks = Vec::new();
         for (out_channel, kernel_size) in zip(&out_channels, kernel_size) {
             let conv_block = CnnBlock::new(vars, in_channels, *out_channel, kernel_size, embedding_dim);
@@ -140,14 +142,20 @@ impl CharLevelNet {
             highway_layers.push(highway);
         }
 
+        let linear_config = LinearConfig { 
+            ws_init: DEFAULT_KAIMING_UNIFORM, 
+            bs_init: Some(Init::Const(1.0)), 
+            bias: false 
+        };
         // output to linear
-        let out_linear = nn::linear(vars, total_filters, char_level_out_dim, Default::default());
+        let out_linear = nn::linear(vars / "to_dim", total_filters, char_level_out_dim, linear_config);
         
         Self {
             embedding: embedding,
             conv_blocks: conv_blocks,
             highways: highway_layers,
-            out_linear: out_linear
+            out_linear: out_linear,
+            device: vars.device()
         }
 
     }
@@ -177,7 +185,7 @@ impl ModuleT for CharLevelNet {
             }
 
             // each output in token_outputs is of shape n_kernels * (batch_size, n_filters,) => (batch_size, total_filters)
-            let mut flatten_token_outputs = Tensor::concat(&token_outputs, 1);
+            let mut flatten_token_outputs = Tensor::concat(&token_outputs, 1).to_device(self.device);
 
             // move through highways, remains (batch_size, total_filters)
             for highway in &self.highways {
@@ -187,7 +195,7 @@ impl ModuleT for CharLevelNet {
         }
 
         // seq_length * (batch_size, total_filters) => (batch_size, sequence_length, total_filters)
-        let outs = Tensor::stack(&outputs, 1);
+        let outs = Tensor::stack(&outputs, 1).to_device(self.device);
 
         // move to linear out (batch_size, sequence_length, total_filters) => (batch_size, sequence_length, out_linear)
         let out = outs.apply(&self.out_linear);
@@ -202,7 +210,8 @@ impl ModuleT for CharLevelNet {
 pub struct UniLM {
     lstm_layers: Vec<nn::LSTM>,
     to_rep: nn::Linear,
-    dropout: f64
+    dropout: f64,
+    device: Device
 }
 
 impl UniLM {
@@ -213,16 +222,17 @@ impl UniLM {
         for _ in 0..n_lstm_layers {
 
             // default on rnn gives everything we need except for dropout, taken care in forward
-            let lm = nn::lstm(vars, in_dim, hidden_dim, Default::default());
+            let lm = nn::lstm(vars / "lstm", in_dim, hidden_dim, Default::default());
             lstm_layers.push(lm);
         }
 
-        let to_rep = nn::linear(vars, hidden_dim, in_dim, Default::default());
+        let to_rep = nn::linear(vars / "to_dim_lstm", hidden_dim, in_dim, Default::default());
 
         Self {
             lstm_layers: lstm_layers,
             to_rep: to_rep,
-            dropout: dropout
+            dropout: dropout,
+            device: vars.device()
         }
 
 
@@ -236,27 +246,27 @@ impl ModuleT for UniLM {
         // xs should be (batch_size, seq_length, out_linear)
 
         // need residual connections, so lstm out should be the same size of input
-        let mut out_point = xs.to_owned().shallow_clone();
-        let mut outputs = vec![xs.to_owned().shallow_clone()];
+        let mut out_point = xs.to_owned().shallow_clone().to_device(self.device);
+        let mut outputs = vec![xs.to_owned().shallow_clone().to_device(self.device)];
 
         for (j, lstm) in (&self.lstm_layers).iter().enumerate() {
 
-            outputs.push(out_point.shallow_clone());
+            outputs.push(out_point.shallow_clone().to_device(self.device));
 
             // adding dropout at non-test time
-            let out_lstm = lstm.seq(&out_point.dropout(self.dropout, train));
+            let out_lstm = lstm.seq(&out_point.dropout(self.dropout, train).to_device(self.device));
             out_point = out_lstm.0;
             
             // out moves back to shape (batch_size, seq_length, hidden_dim) => (batch_size, seq_length, out_linear)
             out_point = out_point.apply(&self.to_rep);
 
             // adding residual to out
-            out_point += outputs[j].shallow_clone();
+            out_point += outputs[j].shallow_clone().to_device(self.device);
 
         }
 
         // move n_lstm_layers * (batch_size, seq_length, out_linear) =>  (n_lstm_layers, batch_size, seq_length, out_linear)
-        let out = Tensor::stack(&outputs, 0);
+        let out = Tensor::stack(&outputs, 0).to_device(self.device);
         out
 
     }
@@ -269,7 +279,8 @@ pub struct ELMo {
     to_vocab: nn::Linear,
     n_lstm_layers: i64,
     char_level: CharLevelNet,
-    token_vocab_size: i64
+    token_vocab_size: i64,
+    device: Device
 }
 
 impl ELMo {
@@ -292,7 +303,7 @@ impl ELMo {
         let char_level = CharLevelNet::new(vars, char_vocab_size, char_embedding_dim, in_channels, out_channels, kernel_size, highways, in_dim);
         let forward_lm = UniLM::new(vars, n_lstm_layers, in_dim, hidden_dim, dropout);
         let backward_lm = UniLM::new(vars, n_lstm_layers, in_dim, hidden_dim, dropout);
-        let to_vocab = nn::linear(vars, in_dim, token_vocab_size, Default::default());
+        let to_vocab = nn::linear(vars / "to_vocab", in_dim, token_vocab_size, Default::default());
 
         Self {
             forward_lm: forward_lm,
@@ -300,7 +311,8 @@ impl ELMo {
             to_vocab: to_vocab,
             n_lstm_layers: n_lstm_layers,
             char_level: char_level,
-            token_vocab_size: token_vocab_size
+            token_vocab_size: token_vocab_size,
+            device: vars.device()
         }
 
 
@@ -311,12 +323,13 @@ impl ModuleT for ELMo {
 
     fn forward_t(&self, xs: &Tensor, train: bool) -> Tensor {
         
+        
         // xs is of shape (batch_size, seq_length, token_length)
         // move through char enconding => (batch_size, seq_length, out_linear)
         let xs_embedded = &self.char_level.forward_t(xs, train);
 
         // xs_embedded should be (batch_size, sequence_length, out_linear)
-        let xs_embedded_flip = Tensor::flip(&xs_embedded.to_owned().shallow_clone(), &[0]);
+        let xs_embedded_flip = Tensor::flip(&xs_embedded.to_owned().shallow_clone(), &[0]).to_device(self.device);
 
         // both should be (n_lstm_layers, batch_size, seq_length, out_linear)
         let forward_lm_outs = self.forward_lm.forward_t(xs_embedded, train);
@@ -338,6 +351,6 @@ impl ModuleT for ELMo {
         let logits = out.reshape(&[-1, self.token_vocab_size]);
 
         logits
-
+        
     }
 }

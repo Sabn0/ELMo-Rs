@@ -1,6 +1,4 @@
 
-// use device..
-
 pub mod training {
 
     use std::error::Error;
@@ -123,9 +121,8 @@ pub mod training {
 
             let logits = model.forward_t(&xs, train_mode); // move throught model...
             // logits of shape (batch_size * seq_length, token_vocab_size), match the targets to that shape
-            let targets = ys.reshape(&[-1]).totype(Kind::Int64);
+            let targets = ys.reshape(&[-1]);
             let batch_loss = logits.cross_entropy_for_logits(&targets);
-
             if train_mode {
                 let opt_vars = opt_vars.unwrap();
                 let opt = opt_vars.0;

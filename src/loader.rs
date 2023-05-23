@@ -111,8 +111,8 @@ pub mod data_loading {
                 // in this case, skipping the maybe less that seq_length words
 
                 end_batch = self.end_index; 
-                let mut xs_batch = self.xs.i(self.start_index..end_batch).to_device(self.device);
-                let mut ys_batch = self.ys.i(self.start_index..end_batch).to_device(self.device);
+                let mut xs_batch = self.xs.i(self.start_index..end_batch).to_kind(Kind::Int64).to_device(self.device);
+                let mut ys_batch = self.ys.i(self.start_index..end_batch).to_kind(Kind::Int64).to_device(self.device);
 
                 // xs shape is (N, max_token_length). We want to reshape to roughly have dim1 = seq_length
                 let dims = Vec::<i64>::try_from(xs_batch.internal_shape_as_tensor()).unwrap();
@@ -139,9 +139,8 @@ pub mod data_loading {
                 Some((xs_batch, ys_batch))
 
             } else {
-
-                let xs_batch = self.xs.i(self.start_index..end_batch).reshape(&[self.batch_size, self.seq_length, -1]).to_device(self.device); // (batch_size, seq_length, max_token_length)
-                let ys_batch = self.ys.i(self.start_index..end_batch).reshape(&[self.batch_size, self.seq_length]).to_device(self.device); // (batch_size, seq_length)    
+                let xs_batch = self.xs.i(self.start_index..end_batch).reshape(&[self.batch_size, self.seq_length, -1]).to_kind(Kind::Int64).to_device(self.device); // (batch_size, seq_length, max_token_length)
+                let ys_batch = self.ys.i(self.start_index..end_batch).reshape(&[self.batch_size, self.seq_length]).to_kind(Kind::Int64).to_device(self.device); // (batch_size, seq_length)    
 
                 // promote starting index for next next()
                 self.start_index = end_batch;

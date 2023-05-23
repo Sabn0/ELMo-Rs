@@ -74,7 +74,7 @@ pub mod do_preprocess {
             char2count.extend([(char_start, n as usize), (char_end, 1 + n as usize), (char_unk, 2 + n as usize)]);
             let chars = char2count.into_iter().map(|(c, _)| c).collect::<Vec<char>>();
             *char_vocab_size = chars.len() as i64;
-            println!("working on token vocab : {}", *char_vocab_size);
+            println!("working on char vocab : {}", *char_vocab_size);
             chars
         }
 
