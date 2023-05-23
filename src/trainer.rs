@@ -15,7 +15,7 @@ pub mod training {
     pub trait TrainModel {
         
         // train forces (x,y) labels for now (classification)
-        fn train(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, model: &impl ModuleT, vars: &mut VarStore, clip_norm: f64, save_model: &str) -> Result<(), Box<dyn Error>>;
+        fn train(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, model: &impl ModuleT, vars: &mut VarStore, clip_norm: f64, save_model: &str, to_break_early: bool) -> Result<(), Box<dyn Error>>;
         fn validate(&self, devset_iter: &mut Loader, model: &impl ModuleT) -> (f64, f64);
         fn step(&self, xs: Tensor, ys: Tensor, model: &impl ModuleT, loss: &mut f64, accuracy: &mut f64, opt_vars: Option<(&mut Optimizer, f64)>);       
         fn predict(&self, targets: &Tensor, logits: &Tensor) -> f64;
@@ -42,7 +42,7 @@ pub mod training {
 
         pub fn run_training(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, model: &ELMo, vars: &mut VarStore, params: &JsonELMo) -> Result<(), Box<dyn Error>> {
 
-            self.train(trainset_iter, devset_iter, params.learning_rate, params.max_iter, model, vars, params.clip_norm, &params.output_file)?;
+            self.train(trainset_iter, devset_iter, params.learning_rate, params.max_iter, model, vars, params.clip_norm, &params.output_file, params.break_early)?;
             Ok(())
         }
 
@@ -55,7 +55,7 @@ pub mod training {
 
     impl TrainModel for ElmoTrainer {
         
-        fn train(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, model: &impl ModuleT, vars: &mut VarStore, clip_norm: f64, output_file: &str) -> Result<(), Box<dyn Error>> {
+        fn train(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, model: &impl ModuleT, vars: &mut VarStore, clip_norm: f64, output_file: &str, to_break_early: bool) -> Result<(), Box<dyn Error>> {
             
             let mut opt = self.init_optimizer(&vars, learning_rate);
             let mut train_progress = match devset_iter {
@@ -82,7 +82,6 @@ pub mod training {
                 // update training progress
                 epoch_loss /= total;
                 epoch_accuracy /= total;
-                println!("{}", epoch_loss);
 
                 let mut progress_entry = TrainingProgress {
                     epoch: vec![epoch], epoch_loss: vec![epoch_loss], epoch_accuracy: vec![epoch_accuracy], dev_loss: None, dev_accuracy: None, time: vec![timer.elapsed().as_secs() as i64]
@@ -96,20 +95,18 @@ pub mod training {
                     progress_entry.dev_loss = Some(vec![dev_loss]);
                     progress_entry.dev_accuracy = Some(vec![dev_accuracy]);
 
-                    if self.break_early(&train_progress) {
+                    if to_break_early && self.break_early(&train_progress) {
                         break;
                     }
 
                 }
 
                 // print progress
-                // bug in progress entry, not learning ... 
                 train_progress = train_progress.add(progress_entry);
                 println!("{}", train_progress);
 
             }
 
-            // save model?
             self.save_model(output_file, vars)?;
 
             Ok(())
@@ -127,7 +124,6 @@ pub mod training {
             let logits = model.forward_t(&xs, train_mode); // move throught model...
             // logits of shape (batch_size * seq_length, token_vocab_size), match the targets to that shape
             let targets = ys.reshape(&[-1]).totype(Kind::Int64);
-
             let batch_loss = logits.cross_entropy_for_logits(&targets);
 
             if train_mode {
@@ -140,7 +136,6 @@ pub mod training {
 
             *loss += f64::try_from(batch_loss.mean(Kind::Float)).unwrap();
             *accuracy += self.predict(&targets, &logits);
-
         }
 
         fn validate(&self, devset_iter: &mut Loader, model: &impl ModuleT) -> (f64, f64) {

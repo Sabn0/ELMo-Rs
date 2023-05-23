@@ -32,7 +32,8 @@ pub struct JsonELMo {
     pub device: Device,
     pub max_iter: i64,
     pub learning_rate: f64,
-    pub clip_norm: f64
+    pub clip_norm: f64,
+    pub break_early: bool
 }
 
 impl Display for JsonELMo {
@@ -53,6 +54,7 @@ impl Display for JsonELMo {
         device: {:?},
         max_iter: {},
         learning_rate: {},
+        break_early: {},
         batch_size: {},
         seq_length: {},
         clip_norm: {}",
@@ -71,6 +73,7 @@ impl Display for JsonELMo {
         self.device, 
         self.max_iter, 
         self.learning_rate,
+        self.break_early,
         self.batch_size,
         self.seq_length,
         self.clip_norm
@@ -152,6 +155,7 @@ impl Conigure for ConfigElmo {
             seq_length: 20,
             clip_norm: 3.0,
             learning_rate: 0.001,               // maybe different
+            break_early: false,
             device: Device::cuda_if_available(),
             char_start: '$',
             char_end: '^',
@@ -176,6 +180,10 @@ impl Conigure for ConfigElmo {
 
         let validate_float = |field: &str| -> Result<f64, Box<dyn Error>> {
             json.get(field).ok_or("field not given")?.as_f64().ok_or("not float".into())
+        };
+
+        let validate_bool = |field: &str| -> Result<bool, Box<dyn Error>> {
+            json.get(field).ok_or("field not given")?.as_bool().ok_or("not bool".into())
         };
 
         let validate_positive_int = |field: &str| -> Result<i64, Box<dyn Error>> {
@@ -254,6 +262,9 @@ impl Conigure for ConfigElmo {
         }
         if let Ok(kernel_size) = validate_vec("kernel_size") {
             params.kernel_size = kernel_size;
+        }
+        if let Ok(break_early) = validate_bool("break_early") {
+            params.break_early = break_early;
         }
         Ok(params)
 

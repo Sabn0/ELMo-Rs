@@ -20,8 +20,8 @@ fn main() {
     //
     // loading training parameteres
     println!("entering program...");
-    //let args: Vec<String> = env::args().collect();
-    let args = vec!["".to_string(), "args.json".to_string()];
+    let args: Vec<String> = env::args().collect();
+    
     println!("building parameters...");
     let mut params = match ConfigElmo::new(&args) {
         Ok(config) => config.get_params(),
