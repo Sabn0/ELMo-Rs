@@ -333,8 +333,7 @@ impl ModuleT for ELMo {
         let backward_out = backward_last.apply(&self.to_vocab);
 
         // (batch_size, seq_length, token_vocab_size), move to (batch_size * seq_length, token_vocab_size) for loss computation
-        // collapsing to equal weights
-        let weights = [1/5, 2/5, 2/5];
+        let weights = [0.2, 0.4, 0.4];
         let out: Tensor = weights[0] * xs_embedded_out + weights[1] * forward_out + weights[2] * backward_out; 
         let logits = out.reshape(&[-1, self.token_vocab_size]);
 
