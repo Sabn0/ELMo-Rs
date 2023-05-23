@@ -82,6 +82,7 @@ pub mod training {
                 // update training progress
                 epoch_loss /= total;
                 epoch_accuracy /= total;
+                println!("{}", epoch_loss);
 
                 let mut progress_entry = TrainingProgress {
                     epoch: vec![epoch], epoch_loss: vec![epoch_loss], epoch_accuracy: vec![epoch_accuracy], dev_loss: None, dev_accuracy: None, time: vec![timer.elapsed().as_secs() as i64]
@@ -102,8 +103,9 @@ pub mod training {
                 }
 
                 // print progress
-                println!("{}", progress_entry);
+                // bug in progress entry, not learning ... 
                 train_progress = train_progress.add(progress_entry);
+                println!("{}", train_progress);
 
             }
 
@@ -133,6 +135,7 @@ pub mod training {
                 let opt = opt_vars.0;
                 let _clip_norm = opt_vars.1;
                 opt.backward_step(&batch_loss);
+                //opt.backward_step_clip(&batch_loss, _clip_norm);
             }
 
             *loss += f64::try_from(batch_loss.mean(Kind::Float)).unwrap();
@@ -183,7 +186,7 @@ pub mod training {
 
             let epochs = &train_progress.epoch;
             let n = epochs.len();
-            if n <= 1 {
+            if n <= 2 {
                 return false
             }
 
@@ -253,30 +256,33 @@ pub mod training {
 
             let mut new_dev_loss = None;
             if self.dev_loss.is_some() {
-                new_dev_loss = self.dev_loss;
+                let mut prior_dev_loss = self.dev_loss.unwrap();
                 let add_dev_loss = rhs.dev_loss.unwrap_or(vec![]);
-                new_dev_loss.clone().unwrap().extend(add_dev_loss);
+                prior_dev_loss.extend(add_dev_loss);
+                new_dev_loss = Some(prior_dev_loss);
             }
 
             let mut new_dev_accuracy = None;
             if self.dev_accuracy.is_some() {
-                new_dev_accuracy = self.dev_accuracy;
+                let mut prioer_dev_accuracy = self.dev_accuracy.unwrap();
                 let add_dev_accuracy = rhs.dev_accuracy.unwrap_or(vec![]);
-                new_dev_accuracy.clone().unwrap().extend(add_dev_accuracy);
+                prioer_dev_accuracy.extend(add_dev_accuracy);
+                new_dev_accuracy = Some(prioer_dev_accuracy);
             }
 
             let mut new_time = self.time;
             new_time.extend(rhs.time);
 
-            TrainingProgress {
+            let new_training_progress = TrainingProgress {
                 epoch: new_epoch,
                 epoch_loss: new_epoch_loss,
                 epoch_accuracy: new_epoch_accuracy,
                 dev_loss: new_dev_loss,
                 dev_accuracy: new_dev_accuracy,
                 time: new_time
-            }
+            };
 
+            new_training_progress
 
         }
     }
