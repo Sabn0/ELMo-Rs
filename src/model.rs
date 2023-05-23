@@ -48,12 +48,12 @@ impl ModuleT for CnnBlock {
         let pool_kernel: i64 = token_length - self.kernel_size + 1;
 
         // xs reshape : (batch_size, 1, token_length, embedding_dim) => (1, embedding_dim, token_length)
-        let xs = xs.reshape(&[batch_size, 1, embedding_dim, token_length]);
+        let reshaped_xs = xs.reshape(&[batch_size, 1, embedding_dim, token_length]);
 
         // denote token_length = l, out_channels = h = number of filters, kernel_size = w, embedding_dim = d
         // self.conv.w is of shape (h, 1, d, w)
         // conv does (h, 1, d, w) * (batch_size, 1, d, l) => (batch_size, h, 1, l-w+1)
-        let conv_out = xs.apply(&self.conv);
+        let conv_out = reshaped_xs.apply(&self.conv);
 
         // tanh doesn't change dims, (batch_size, h, 1, l-w+1), then move to (batch_size, h, l-w+1)
         assert!(Vec::<i64>::try_from(conv_out.internal_shape_as_tensor()).unwrap()[2] == 1);
@@ -169,29 +169,29 @@ impl ModuleT for CharLevelNet {
         for s in 0..*seq_length {
 
             let xs_tokens: Tensor = xs.slice(1, s, s+1, 1); // should be (batch_size, 1, token_length)
-            let x = xs_tokens.apply(&self.embedding); // should be (batch_size, 1, token_length, embedding_dim)
+            let xs_embedded = xs_tokens.apply(&self.embedding); // should be (batch_size, 1, token_length, embedding_dim)
             let mut token_outputs = Vec::new();
             for conv_block in &self.conv_blocks {
-                let out = conv_block.forward_t(&x, train); // out is of shape (batch_size, n_filters)
+                let out = conv_block.forward_t(&xs_embedded, train); // out is of shape (batch_size, n_filters)
                 token_outputs.push(out);
             }
 
             // each output in token_outputs is of shape n_kernels * (batch_size, n_filters,) => (batch_size, total_filters)
-            let mut token_outputs = Tensor::concat(&token_outputs, 1);
+            let mut flatten_token_outputs = Tensor::concat(&token_outputs, 1);
 
             // move through highways, remains (batch_size, total_filters)
             for highway in &self.highways {
-                token_outputs = highway.forward_t(&token_outputs, train);
+                flatten_token_outputs = highway.forward_t(&flatten_token_outputs, train);
             }
-            outputs.push(token_outputs);
+            outputs.push(flatten_token_outputs);
         }
 
         // seq_length * (batch_size, total_filters) => (batch_size, sequence_length, total_filters)
-        let outputs = Tensor::stack(&outputs, 1);
+        let outs = Tensor::stack(&outputs, 1);
 
         // move to linear out (batch_size, sequence_length, total_filters) => (batch_size, sequence_length, out_linear)
-        let outputs = outputs.apply(&self.out_linear);
-        outputs
+        let out = outs.apply(&self.out_linear);
+        out
 
 
     }
@@ -236,28 +236,28 @@ impl ModuleT for UniLM {
         // xs should be (batch_size, seq_length, out_linear)
 
         // need residual connections, so lstm out should be the same size of input
-        let mut out = xs.to_owned().shallow_clone();
+        let mut out_point = xs.to_owned().shallow_clone();
         let mut outputs = vec![xs.to_owned().shallow_clone()];
 
         for (j, lstm) in (&self.lstm_layers).iter().enumerate() {
 
-            outputs.push(out.shallow_clone());
+            outputs.push(out_point.shallow_clone());
 
             // adding dropout at non-test time
-            let out_lstm = lstm.seq(&out.dropout(self.dropout, train));
-            out = out_lstm.0;
+            let out_lstm = lstm.seq(&out_point.dropout(self.dropout, train));
+            out_point = out_lstm.0;
             
             // out moves back to shape (batch_size, seq_length, hidden_dim) => (batch_size, seq_length, out_linear)
-            out = out.apply(&self.to_rep);
+            out_point = out_point.apply(&self.to_rep);
 
             // adding residual to out
-            out += outputs[j].shallow_clone();
+            out_point += outputs[j].shallow_clone();
 
         }
 
         // move n_lstm_layers * (batch_size, seq_length, out_linear) =>  (n_lstm_layers, batch_size, seq_length, out_linear)
-        let outputs = Tensor::stack(&outputs, 0);
-        outputs
+        let out = Tensor::stack(&outputs, 0);
+        out
 
     }
 }
