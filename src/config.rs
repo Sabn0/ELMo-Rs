@@ -190,18 +190,18 @@ impl Conigure for ConfigElmo {
         };
 
         let validate_positive_int = |field: &str| -> Result<i64, Box<dyn Error>> {
-            let val = json.get(field).ok_or("field not given")?.as_u64().ok_or::<String>("not int".into())?;
+            let val = json.get(field).ok_or("field not given")?.as_i64().ok_or::<String>("not int".into())?;
             if val ==  0 { return Err(format!("not positive int").into()) }
-            Ok(val as i64)
+            Ok(val)
         };
 
         let validate_vec = |field: &str| -> Result<Vec<i64>, Box<dyn Error>> {
             let arr = json.get(field).ok_or("field not given")?.as_array().ok_or::<String>("not vec".into())?;
             let mut values = Vec::new();
             for val in arr {
-                let val = val.get(field).ok_or("field not given")?.as_u64().ok_or::<String>("not int".into())?;
+                let val = val.get(field).ok_or("field not given")?.as_i64().ok_or::<String>("not int".into())?;
                 if val ==  0 { return Err(format!("not positive int").into()) }
-                values.push(val as i64);
+                values.push(val);
             }
             Ok(values)
         };
