@@ -69,7 +69,7 @@ pub mod do_preprocess {
             let char_chunk = vocab.join("");
             let mut char2count = char_chunk.chars().collect::<Counter<_>>().k_most_common_ordered(*char_vocab_size as usize);
             let n = char2count.len();
-            char2count.extend([(char_start, n as usize), (char_end, 1 + n as usize), (char_unk, 2 + n as usize)]);
+            char2count.extend([(char_start, n), (char_end, 1 + n), (char_unk, 2 + n)]);
             let chars = char2count.into_iter().map(|(c, _)| c).collect::<Vec<char>>();
             *char_vocab_size = chars.len() as i64;
             println!("working on char vocab : {}", *char_vocab_size);
