@@ -1,8 +1,4 @@
-//! A pure rust implementation of the ELMo model, based on the original paper.
-//! 
-//! 
-//! 
-
+//! A pure rust implementation of the ELMo architecture, based on the original paper.
 
 mod config;
 mod preprocessor;
