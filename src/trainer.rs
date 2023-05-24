@@ -281,7 +281,7 @@ pub mod training {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             
             let n = self.epoch.len();
-            assert!(n > 0);
+            assert!(n > 0, "can't use display before first iteration");
             
             let epoch = self.epoch.get(n-1).unwrap();
             let epoch_loss = self.epoch_loss.get(n-1).unwrap();
