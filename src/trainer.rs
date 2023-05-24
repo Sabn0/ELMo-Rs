@@ -18,14 +18,8 @@ pub mod training {
         fn step(&self, xs: Tensor, ys: Tensor, model: &impl ModuleT, loss: &mut f64, accuracy: &mut f64, opt_vars: Option<(&mut Optimizer, f64)>);       
         fn predict(&self, targets: &Tensor, logits: &Tensor) -> f64;
         fn init_optimizer(&self, vars: &VarStore, learning_rate: f64) -> Optimizer;
-        
-        fn break_early(&self, _train_progress: &TrainingProgress) -> bool { 
-            false
-        }
-        
-        fn save_model(&self, out_path: &str, vars: &VarStore) -> Result<(), Box<dyn Error>> {
-            Ok(vars.save(out_path)?)
-        }
+        fn break_early(&self, _train_progress: &TrainingProgress) -> bool { false }
+        fn save_model(&self, out_path: &str, vars: &VarStore) -> Result<(), Box<dyn Error>> { Ok(vars.save(out_path)?) }
     }
 
     pub struct ElmoTrainer;
