@@ -3,13 +3,12 @@
 pub mod do_preprocess {
 
     use std::collections::HashMap;
-
     use counter::Counter;
     use itertools::Itertools;
-
     use crate::config::JsonELMo;
 
-    pub trait CollectT {
+    // collect a Hashmap into a vector of tuples in reversed key order
+    pub(in crate) trait CollectT {
         type Item;
         fn collect_gen(elements: Vec<Self::Item>) -> HashMap<Self::Item, usize>;
     }
@@ -37,18 +36,17 @@ pub mod do_preprocess {
     }
 
     pub struct Preprocessor;
-
     impl Preprocessor {
 
         pub fn new() -> Self { Self {} }
 
-        // remove duplicated sentences, mutate the corpus in self
+        // remove duplicated sentences, mutate the sentences in self
         fn unique(&self, sentences: &mut Vec<String>) {
             let reduced_sentences = sentences.clone().into_iter().unique().collect::<Vec<String>>();
             *sentences = reduced_sentences;
         }
 
-        // uses the counter to get a vocabulary of words
+        // uses the counter to get a vector of unique words
         fn count_tokens(&self, sentences: &Vec<String>, token_vocab_size: &mut i64, min_count: i64, str_unk: &str) -> Vec<String> {
 
             println!("counting from {} sentences", sentences.len());
@@ -93,11 +91,11 @@ pub mod do_preprocess {
             // strip duplicated sentences
             self.unique(sentences);
 
-            // pad sentences with SOS + EOS
-            sentences.iter_mut().for_each(|s| { // filtering future EOT and SOT chars
+            // some string work on sentences 
+            sentences.iter_mut().for_each(|s| { 
                 *s = s.trim_matches(' ').to_string(); // remove leading and trailing spaces
-                *s = s.chars().filter(|x| x != &char_start && x != &char_end && x != &char_unk).collect::<String>();
-                *s = "SOS ".to_string() + s;
+                *s = s.chars().filter(|x| x != &char_start && x != &char_end && x != &char_unk).collect::<String>(); // filtering future EOT and SOT chars
+                *s = "SOS ".to_string() + s;             // pad sentences with SOS + EOS symbols 
                 *s += " EOS";
             });
 
@@ -109,13 +107,10 @@ pub mod do_preprocess {
             let chars = self.count_chars(&sentences, char_vocab_size, char_start, char_end, char_unk);
             let char2int: HashMap<char, usize> = <char as CollectT>::collect_gen(chars);
 
-            // token2int is bound with vocab_size tokens, minimum occurrences of min count. It countains and SOS,
-            // EOS and UNK tokens. 
-
-            // char2int has all the chars in the corpus + start + end chars, that has been filtered from the sentences.
-            // sentences don't have duplications, padded with SOS and EOS tokens.
-            // there is no UNK for chars, an unknown char will be replaced with it's uft8 encoding.
-
+            // token2int is bound with vocab_size tokens, minimum occurrences of min count. 
+            // It countains and SOS, EOS and UNK tokens. 
+            // char2int has all the chars in the corpus + start + end chars + unk char, that has been filtered from the sentences.
+            
             (token2int, char2int)
         }
 
