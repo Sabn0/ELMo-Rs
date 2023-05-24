@@ -7,6 +7,7 @@ mod model;
 mod trainer;
 
 pub use config::ConfigElmo;
+pub use config::JsonELMo;
 pub use config::files_handling;
 pub use loader::data_loading::DatasetBuilder;
 pub use loader::data_loading::ELMoText;

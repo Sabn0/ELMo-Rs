@@ -8,8 +8,8 @@ use std::{fs::{self}, error::Error, fmt::Display};
 // all the parameters for training
 #[derive(Clone, Debug)]
 pub struct JsonELMo {
-    pub corpus_file: String,
-    pub output_file: String,
+    pub corpus_file: Option<String>,
+    pub output_file: Option<String>,
     pub token_vocab_size: i64,
     pub char_vocab_size: i64,
     pub min_count: i64,
@@ -99,10 +99,14 @@ impl ConfigElmo {
         let params = ConfigElmo::validate(json)?;
 
         // create output directory if not exists
-        let output_dir = params.output_file.rsplit_once('/');
-        if let Some((dir_path, _)) = output_dir {
-            fs::create_dir_all(dir_path)?;
-        } // else is the case in which the file doesn't have prior folder to create
+        let output_file = params.output_file.clone();
+        if output_file.is_some() {
+            let output_unwrapped = output_file.unwrap();
+            let output_dir = output_unwrapped.rsplit_once('/');
+            if let Some((dir_path, _)) = output_dir {
+                fs::create_dir_all(dir_path)?;
+            } // else is the case in which the file doesn't have prior folder to create
+        }
 
         Ok (
             Self {
@@ -121,11 +125,11 @@ impl ConfigElmo {
 pub trait Conigure {
     type Item;
     fn read_json(json_path: &String) -> Value;
-    fn defaults(corpus_file: String, output_file: String) -> Self::Item;
+    fn defaults(corpus_file: Option<String>, output_file: Option<String>) -> Self::Item;
     fn validate(json: Value) -> Result<Self::Item, Box<dyn Error>>;
 }
 
-
+// designed for loading sentences from file and saving to output file, when names are given in json
 impl Conigure for ConfigElmo {
 
     type Item = JsonELMo;
@@ -137,7 +141,7 @@ impl Conigure for ConfigElmo {
     }
 
     // default values for training
-    fn defaults(corpus_file: String, output_file: String) -> Self::Item {
+    fn defaults(corpus_file: Option<String>, output_file: Option<String>) -> Self::Item {
 
         Self::Item {
             token_vocab_size: 300_000,
@@ -146,8 +150,8 @@ impl Conigure for ConfigElmo {
             max_len_token: 50,
             char_embedding_dim: 16,
             in_channels: 1,
-            kernel_size: vec![1, 2, 3, 4, 5, 6, 7],
-            out_channels: vec![32, 32, 64 ,128, 256, 512, 1024],
+            kernel_size: vec![1], //vec![1, 2, 3, 4, 5, 6, 7],
+            out_channels: vec![32], //vec![32, 32, 64 ,128, 256, 512, 1024],
             highways: 1,
             in_dim: 128,
             hidden_dim: 1024,
@@ -209,7 +213,7 @@ impl Conigure for ConfigElmo {
         // validate input and output in json - most be given
         let corpus_file = validate_str("corpus_file").to_string();
         let output_file = validate_str("output_file").to_string();
-        let mut params = ConfigElmo::defaults(corpus_file, output_file);
+        let mut params = ConfigElmo::defaults(Some(corpus_file), Some(output_file));
 
         // validate optional input parameters
         if let Ok(token_vocab_size) = validate_positive_int("token_vocab_size") {

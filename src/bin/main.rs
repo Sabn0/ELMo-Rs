@@ -22,7 +22,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     // loading training parameteres
     println!("entering program...");
     let args: Vec<String> = env::args().collect();
-    //let args = vec!["".to_string(), "args.json".to_string()];
     
     println!("building parameters...");
     let mut params = match ConfigElmo::new(&args) {
@@ -35,7 +34,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     //
     // preprocess of sentences
-    let mut sentences = files_handling::load_sentences(&params.corpus_file)?;
+    let corpus_file = params.corpus_file.clone().unwrap();
+    let mut sentences = files_handling::load_sentences(&corpus_file)?;
     let mut preprocessor = Preprocessor::new();
     let (token2int,char2int) = preprocessor.preprocess(&mut sentences, &mut params);
     // -- end of preprocessing sentences
@@ -84,14 +84,19 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // 
     // do testing on test set with saved model
-    vars.load(&params.output_file.as_str())?;
-    let mut testset_iter = iters.next().ok_or("iters doesn't have a testing loader but testing is called")?;
-    assert!(iters.next().is_none());
+    if params.output_file.is_some() {
 
-    let test_acc = elmo_train.run_testing(&mut testset_iter, &model)?;
-    println!("got {} acc on test set", test_acc);
-    // -- end of testing --
-    //
+        vars.load(&params.output_file.unwrap().as_str())?;
+        let mut testset_iter = iters.next().ok_or("iters doesn't have a testing loader but testing is called")?;
+        assert!(iters.next().is_none());
+    
+        let test_acc = elmo_train.run_testing(&mut testset_iter, &model)?;
+        println!("got {} acc on test set", test_acc);
+        // -- end of testing --
+        //
+
+    }
+
 
     Ok(())
 }   

@@ -13,7 +13,7 @@ pub mod training {
     pub trait TrainModel {
         
         // train forces (x,y) labels (classification)
-        fn train(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, model: &impl ModuleT, vars: &mut VarStore, clip_norm: f64, save_model: &str, to_break_early: bool) -> Result<(), Box<dyn Error>>;
+        fn train(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, model: &impl ModuleT, vars: &mut VarStore, clip_norm: f64, save_model: Option<String>, to_break_early: bool) -> Result<(), Box<dyn Error>>;
         fn validate(&self, devset_iter: &mut Loader, model: &impl ModuleT) -> (f64, f64);
         fn step(&self, xs: Tensor, ys: Tensor, model: &impl ModuleT, loss: &mut f64, accuracy: &mut f64, opt_vars: Option<(&mut Optimizer, f64)>);       
         fn predict(&self, targets: &Tensor, logits: &Tensor) -> f64;
@@ -32,7 +32,7 @@ pub mod training {
 
         pub fn run_training(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, model: &ELMo, vars: &mut VarStore, params: &JsonELMo) -> Result<(), Box<dyn Error>> {
 
-            self.train(trainset_iter, devset_iter, params.learning_rate, params.max_iter, model, vars, params.clip_norm, &params.output_file, params.break_early)?;
+            self.train(trainset_iter, devset_iter, params.learning_rate, params.max_iter, model, vars, params.clip_norm, params.output_file.clone(), params.break_early)?;
             Ok(())
         }
 
@@ -45,7 +45,7 @@ pub mod training {
 
     impl TrainModel for ElmoTrainer {
         
-        fn train(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, model: &impl ModuleT, vars: &mut VarStore, clip_norm: f64, output_file: &str, to_break_early: bool) -> Result<(), Box<dyn Error>> {
+        fn train(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, model: &impl ModuleT, vars: &mut VarStore, clip_norm: f64, output_file: Option<String>, to_break_early: bool) -> Result<(), Box<dyn Error>> {
             
             let mut opt = self.init_optimizer(&vars, learning_rate)?;
             let mut train_progress = match devset_iter {
@@ -102,8 +102,11 @@ pub mod training {
 
             }
 
-            self.save_model(output_file, vars)?;
-
+            if output_file.is_some() {
+                self.save_model(output_file.unwrap().as_str(), vars)?;
+            }
+            
+            println!("finished training");
             Ok(())
 
         
