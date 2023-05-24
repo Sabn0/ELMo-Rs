@@ -2,6 +2,7 @@
 
 
 use std::env;
+use std::error::Error;
 use elmo_trainer::ConfigElmo;
 use elmo_trainer::ELMoText;
 use elmo_trainer::Loader;
@@ -15,7 +16,7 @@ use tch::Tensor;
 use tch::nn;
 
 
-fn main() {
+fn main() -> Result<(), Box<dyn Error>> {
     
     //
     // loading training parameteres
@@ -34,7 +35,7 @@ fn main() {
 
     //
     // preprocess of sentences
-    let mut sentences = files_handling::load_sentences(&params.corpus_file).unwrap();
+    let mut sentences = files_handling::load_sentences(&params.corpus_file)?;
     let mut preprocessor = Preprocessor::new();
     let (token2int,char2int) = preprocessor.preprocess(&mut sentences, &mut params);
     // -- end of preprocessing sentences
@@ -72,7 +73,7 @@ fn main() {
     
     //
     // running the training process with train and dev iterators
-    let mut trainset_iter = iters.next().unwrap();
+    let mut trainset_iter = iters.next().ok_or("iters is but should have multiple loaders empty")?;
     let mut devset_iter = iters.next();
     let elmo_train = ElmoTrainer::new();
     if let Err(e) = elmo_train.run_training(&mut trainset_iter, &mut devset_iter, &model, &mut vars, &params) {
@@ -83,12 +84,14 @@ fn main() {
 
     // 
     // do testing on test set with saved model
-    vars.load(&params.output_file.as_str()).unwrap();
-    let mut testset_iter = iters.next().unwrap();
+    vars.load(&params.output_file.as_str())?;
+    let mut testset_iter = iters.next().ok_or("iters doesn't have a testing loader but testing is called")?;
     assert!(iters.next().is_none());
 
-    let test_acc = elmo_train.run_testing(&mut testset_iter, &model).unwrap();
+    let test_acc = elmo_train.run_testing(&mut testset_iter, &model)?;
     println!("got {} acc on test set", test_acc);
     // -- end of testing --
     //
+
+    Ok(())
 }   
