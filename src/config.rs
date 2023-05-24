@@ -1,11 +1,11 @@
 
 // imports
-
 use serde_json::Value;
 use tch::Device;
 use std::{fs::{self}, error::Error, fmt::Display};
 
 
+// all the parameters for training
 #[derive(Clone, Debug)]
 pub struct JsonELMo {
     pub corpus_file: String,
@@ -81,7 +81,7 @@ impl Display for JsonELMo {
     }
 }
 
-// validation of input arguments
+
 pub struct ConfigElmo {
     params: JsonELMo
 }
@@ -117,12 +117,14 @@ impl ConfigElmo {
 
 }
 
+
 pub trait Conigure {
     type Item;
     fn read_json(json_path: &String) -> Value;
     fn defaults(corpus_file: String, output_file: String) -> Self::Item;
     fn validate(json: Value) -> Result<Self::Item, Box<dyn Error>>;
 }
+
 
 impl Conigure for ConfigElmo {
 
@@ -134,6 +136,7 @@ impl Conigure for ConfigElmo {
         json
     }
 
+    // default values for training
     fn defaults(corpus_file: String, output_file: String) -> Self::Item {
 
         Self::Item {
@@ -167,8 +170,8 @@ impl Conigure for ConfigElmo {
 
     }
 
-    // the input json has many fields of hyper parameters, this function mainly performs checks 
-    // for data types.
+    // the input json has many fields of hyper parameters, 
+    // this function mainly performs checks of data types.
     fn validate(json: Value) -> Result<Self::Item, Box<dyn Error>> {
 
         let validate_str = |field: &str| {
@@ -295,7 +298,6 @@ pub mod files_handling {
     fn parse_line(line: String) -> String {
 
         // line is a string of text, it is trimmed for trailing and ending spaces, lower cased.
-        // As default add end-of-sequence and start-of-sequence tokens, but can be set to false.
         let line_str = [&line.trim().to_lowercase()].map(|x| x.to_string()).to_vec().join(" ");
         line_str
     }
