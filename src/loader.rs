@@ -161,7 +161,7 @@ pub mod data_loading {
     // similar to the pytorch implementation, trait to get an example by its index
     pub trait DatasetBuilder { 
         type Error;
-        fn get_len(&self) -> u64;
+        fn get_len(&self) -> i64;
         fn get_example(&self, index: usize) -> Result<(Tensor, Tensor), Self::Error>;
     }
 
@@ -199,8 +199,8 @@ pub mod data_loading {
 
         type Error = Box<dyn Error>;
 
-        fn get_len(&self) -> u64 { 
-            self.sentences.len() as u64
+        fn get_len(&self) -> i64 { 
+            self.sentences.len() as i64
         }
 
         fn get_example(&self, index: usize) -> Result<(Tensor, Tensor), Self::Error> {
