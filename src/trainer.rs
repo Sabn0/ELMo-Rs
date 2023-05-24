@@ -12,12 +12,12 @@ pub mod training {
 
     pub trait TrainModel {
         
-        // train forces (x,y) labels for now (classification)
+        // train forces (x,y) labels (classification)
         fn train(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, model: &impl ModuleT, vars: &mut VarStore, clip_norm: f64, save_model: &str, to_break_early: bool) -> Result<(), Box<dyn Error>>;
         fn validate(&self, devset_iter: &mut Loader, model: &impl ModuleT) -> (f64, f64);
         fn step(&self, xs: Tensor, ys: Tensor, model: &impl ModuleT, loss: &mut f64, accuracy: &mut f64, opt_vars: Option<(&mut Optimizer, f64)>);       
         fn predict(&self, targets: &Tensor, logits: &Tensor) -> f64;
-        fn init_optimizer(&self, vars: &VarStore, learning_rate: f64) -> Optimizer;
+        fn init_optimizer(&self, vars: &VarStore, learning_rate: f64) -> Result<Optimizer, Box<dyn Error>>;
         fn break_early(&self, _train_progress: &TrainingProgress) -> bool { false }
         fn save_model(&self, out_path: &str, vars: &VarStore) -> Result<(), Box<dyn Error>> { Ok(vars.save(out_path)?) }
     }
@@ -27,9 +27,7 @@ pub mod training {
     impl ElmoTrainer {
 
         pub fn new() -> Self {
-
              Self {} 
-            
         }
 
         pub fn run_training(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, model: &ELMo, vars: &mut VarStore, params: &JsonELMo) -> Result<(), Box<dyn Error>> {
@@ -49,7 +47,7 @@ pub mod training {
         
         fn train(&self, trainset_iter: &mut Loader, devset_iter: &mut Option<Loader>, learning_rate: f64, max_iter: i64, model: &impl ModuleT, vars: &mut VarStore, clip_norm: f64, output_file: &str, to_break_early: bool) -> Result<(), Box<dyn Error>> {
             
-            let mut opt = self.init_optimizer(&vars, learning_rate);
+            let mut opt = self.init_optimizer(&vars, learning_rate)?;
             let mut train_progress = match devset_iter {
                 Some(_) => TrainingProgress::init_with_dev(),
                 None => TrainingProgress::init_no_dev()
@@ -76,7 +74,12 @@ pub mod training {
                 epoch_accuracy /= total;
 
                 let mut progress_entry = TrainingProgress {
-                    epoch: vec![epoch], epoch_loss: vec![epoch_loss], epoch_accuracy: vec![epoch_accuracy], dev_loss: None, dev_accuracy: None, time: vec![timer.elapsed().as_secs() as i64]
+                    epoch: vec![epoch], 
+                    epoch_loss: vec![epoch_loss], 
+                    epoch_accuracy: vec![epoch_accuracy], 
+                    dev_loss: None, 
+                    dev_accuracy: None, 
+                    time: vec![timer.elapsed().as_secs() as i64]
                 };
 
                 // add dev set calculation, update and early break
@@ -161,10 +164,10 @@ pub mod training {
             accuracy
         }
 
-        fn init_optimizer(&self, vars: &VarStore, learning_rate: f64) -> Optimizer {
+        fn init_optimizer(&self, vars: &VarStore, learning_rate: f64) -> Result<Optimizer, Box<dyn Error>> {
 
-            let opt: Optimizer = Adam::default().build(&vars, learning_rate).unwrap();
-            opt
+            let opt: Optimizer = Adam::default().build(&vars, learning_rate)?;
+            Ok(opt)
 
         }
 
