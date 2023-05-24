@@ -15,7 +15,7 @@ If wished, you run a training process after cloning the repo using :
  The *main.rs* binary expects a single argument, a json file. The json should specify (at the minimum) two parameters: (1) a txt file with corpus of sentences for training. (2) a location for output file that will save a trained model. As follows:
  ```javascript
  {
-    "corpus_file": "Input/some_sentences.txt",
+    "corpus_file": "Input/corpus.txt",
     "output_dir": "Output/model"
  }
  ```
