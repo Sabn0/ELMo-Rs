@@ -1,23 +1,16 @@
 
-/*
-
-consider having a custom error for this module
- */
-
 
 pub mod data_loading {
 
     use std::collections::HashMap;
     use std::error::Error;
-
     use tch::Device;
     use tch::IndexOp;
     use tch::Kind;
     use tch::Tensor;
-
     use crate::config::JsonELMo;
 
-    // a loader similar to Iter2 of tch
+    // a loader similar to Iter2 of tch, but it knows to receive a vector of tensors and not a tensor of tensors
     pub struct Loader {
         xs: Vec<Tensor>,
         ys: Vec<Tensor>,
@@ -32,10 +25,9 @@ pub mod data_loading {
 
             // each element in xs is of shape (sentence_length, max_token_length)
             // each element in ys is of shape (sentence_length)
-            // the catch is - every sentence has different length. 
-
-            // After shuffling, in StreamLoader:
-            // So we will move to stream of words of batch_size * seq_length
+            
+            // Since every sentence has different length, Loader is then followed by StreamLoader, that generates
+            // batches of equal length strings (batch_size, seq_length, ...)
 
             Self {
                 xs: xs,
@@ -46,7 +38,9 @@ pub mod data_loading {
             }
         }
 
-        pub fn shuffle(&mut self) -> &mut Loader {
+        pub(in crate) fn shuffle(&mut self) -> &mut Loader {
+
+            // shuffles xs and vs tensors together with random permutation and sends self back
 
             let n_samples = self.xs.len();
             let permutation = Vec::<i64>::try_from(Tensor::randperm(n_samples as i64, (Kind::Int64, self.device))).unwrap();
@@ -58,7 +52,9 @@ pub mod data_loading {
 
         }
 
-        pub fn to_stream(&mut self) -> StreamLoader {
+        pub(in crate) fn to_stream(&mut self) -> StreamLoader {
+
+            // converts vectors of tensors (xs, ys) to initalized StreamLoader that receives pure tensors
 
             let xs = Tensor::concat(&self.xs, 0); // of shape (N_tokens, max_token_length)
             let ys = Tensor::concat(&self.ys, 0); // of shape (N_tokens)
@@ -81,7 +77,7 @@ pub mod data_loading {
 
     }
 
-    pub struct StreamLoader {
+    pub(in crate) struct StreamLoader {
         xs: Tensor,
         ys: Tensor,
         device: Device,
@@ -92,23 +88,26 @@ pub mod data_loading {
         end_index: i64
     }
 
+    // implementation of Iterator to a StreamLoader.
+    // The iterator generates pairs of (batch_size, seq_length, ...) tensor inside a training iteration. 
     impl Iterator for StreamLoader {
         type Item = (Tensor, Tensor);
 
         fn next(&mut self) -> Option<Self::Item> {
             
-            // that ends loop over examples
+            // stop condition -> ends loop over examples
             if self.start_index >= self.end_index {
                 return None
             }
 
+            // slice is the size of examples loaded each next()
             let slice = self.batch_size * self.seq_length;
             let mut end_batch = self.start_index + slice;
 
             // that handles last smaller batch
             if end_batch > self.end_index {
 
-                // in this case, skipping the maybe less that seq_length words
+                // in this case, skipping the less-than seq_length words
 
                 end_batch = self.end_index; 
                 let mut xs_batch = self.xs.i(self.start_index..end_batch).to_kind(Kind::Int64).to_device(self.device);
@@ -133,16 +132,19 @@ pub mod data_loading {
                     }
                 }
 
-                // promote starting index for next next()
+                // promote starting index for following next()
                 self.start_index = end_batch;
 
                 Some((xs_batch, ys_batch))
 
             } else {
+
+                // in this case, get the batch and reshape to (batch_size, seq_length, ... )
+
                 let xs_batch = self.xs.i(self.start_index..end_batch).reshape(&[self.batch_size, self.seq_length, -1]).to_kind(Kind::Int64).to_device(self.device); // (batch_size, seq_length, max_token_length)
                 let ys_batch = self.ys.i(self.start_index..end_batch).reshape(&[self.batch_size, self.seq_length]).to_kind(Kind::Int64).to_device(self.device); // (batch_size, seq_length)    
 
-                // promote starting index for next next()
+                // promote starting index for foloowing next()
                 self.start_index = end_batch;
 
                 Some((xs_batch, ys_batch))
@@ -150,13 +152,14 @@ pub mod data_loading {
 
             // xs_batch should be (batch_size, seq_length, max_token_length)
             // ys_batch should be (batch_size, seq_length)
-
             // last iteration might be smaller
+
 
         }
     }
 
-    pub trait DatasetBuilder {
+    // similar to the pytorch implementation, trait to get an example by its index
+    pub trait DatasetBuilder { 
         type Error;
         fn get_len(&self) -> u64;
         fn get_example(&self, index: usize) -> Result<(Tensor, Tensor), Self::Error>;
@@ -174,7 +177,10 @@ pub mod data_loading {
     }
 
     impl ELMoText {
-        pub fn new(sentences: Vec<String>, token2int: HashMap<String, usize>, char2int: HashMap<char, usize>, params: &JsonELMo) -> Self {
+        pub fn new(sentences: Vec<String>, 
+            token2int: HashMap<String, usize>, 
+            char2int: HashMap<char, usize>, 
+            params: &JsonELMo) -> Self {
             
             Self {
                 sentences: sentences,
@@ -204,6 +210,9 @@ pub mod data_loading {
 
             // Tensor for labels: each element in the tensor is a label of a token in the sentence.
             // the output is of shape (n, 1), n is the length of the sentence.
+            
+            // n will be the same for an example and its matching labels. The example will miss 
+            // its last element, labels will miss the first label.
 
             let mut inputs: Vec<Tensor> = Vec::new();
             let example = self.sentences.get(index).ok_or("example index not found in examples indices")?;            
@@ -211,14 +220,12 @@ pub mod data_loading {
             let map_chars_to_ints = | token: &Vec<char>| -> Vec<i64> {
 
                 // map a token to a series of char ids
-                // replace uknown chars with sequence of bytes
+                // replace uknown chars with unk char symbol
                 let unk_char_id = self.char2int.get(&self.char_unk).expect("didn't find unk char symbol");
                 let mut char_ids = token.into_iter().map(|c| {
                     let char_id = self.char2int.get(c).unwrap_or(unk_char_id);
                     *char_id as i64
                     // replacing unknown chars with unk char symbol, not handling seq bytes
-                    //let mut char_buf: [u8; 2] = [0; 2]; 
-                    //c.encode_utf8(&mut char_buf);
                 }).collect::<Vec<i64>>();
                 
                 // obey to max_len_token with pad or truncate
@@ -237,15 +244,13 @@ pub mod data_loading {
             };
 
             let tokens = example.clone().split(" ").map(|x| x.trim().to_owned()).collect::<Vec<String>>();
-            let unk_id = self.token2int.get(&self.str_unk).expect("didn't find unk symbol");
+            let unk_id = self.token2int.get(&self.str_unk).expect("didn't find unk token symbol");
             let mut labels = (&tokens).iter().map(|t| {
                 let label = self.token2int.get(t).cloned().unwrap_or(*unk_id);
                 Tensor::from_slice(&[label as i64])
             } ).collect::<Vec<Tensor>>();
 
             // move each token from string of chars to int encoding of fixed maximal length
-            // wrap token with SOT and EOT (SOT is $, EOT is ^), pad with with spaces or truncate.
-
             for token in &tokens {
                 let mut token_vec = token.split("").filter(|x| x.len()>0).map(|x| x.chars().nth(0).unwrap()).collect::<Vec<char>>();
                 token_vec.insert(0, self.char_start);
@@ -263,18 +268,17 @@ pub mod data_loading {
             let n = inputs.len();
             let _ = labels.remove(0);
             let _ = inputs.remove(n-1);
-
             assert_eq!(inputs.len(), labels.len());
 
-            // move to tensor
+            // move to tensors
             let inputs_tensor = Tensor::concat(&inputs, 0).reshape(&[-1, self.max_len_token as i64]);
             let labels_tensor = Tensor::concat(&labels, 0).reshape(&[-1]);
             let input_length = Vec::<i64>::try_from(inputs_tensor.internal_shape_as_tensor()).unwrap()[0];
             let labels_length = Vec::<i64>::try_from(labels_tensor.internal_shape_as_tensor()).unwrap()[0];
             assert_eq!(input_length, labels_length);
             
-            // inputs_tensor is of shape (sentence_length, max_token_length)
-            // labels_tnesor is of shape (sentence_length)
+            // inputs_tensor is of shape (sentence_length-1, max_token_length)
+            // labels_tnesor is of shape (sentence_length-1)
             let output = (inputs_tensor, labels_tensor);
             Ok(output)
 
@@ -282,6 +286,8 @@ pub mod data_loading {
     }
 
 
+    // An implementation to get a random permutation that is split to train, dev and test sets indices
+    // given N number of samples in the corpus
     pub struct Splitter;
     impl Splitter {
 
@@ -304,7 +310,7 @@ pub mod data_loading {
             ];
             split_points.push(n_samples - split_points.iter().sum::<i64>());
 
-            assert!(split_points.iter().sum::<i64>() == n_samples, "number of samples must equate to sum of splits");
+            assert!(split_points.iter().sum::<i64>() == n_samples, "number of samples must be equal to sum of splits");
             split_points
 
         }
@@ -318,26 +324,6 @@ pub mod data_loading {
             let split_indices: Vec<Tensor> = indices.split_with_sizes(&split_points, 0);
             split_indices
         }
-
-
-        pub fn get_split_train_dev_test(&self, sentences: &Vec<String>) -> Result<Vec<Vec<String>>, Box<dyn Error>> {
-
-            let n_samples = sentences.len() as i64;
-            let split_indices = self.get_split_train_dev_test_indices(n_samples);
-            // split indices is a vector of 3 tensors, each tensor has the indices of one datset
-
-            let mut splits: Vec<Vec<String>> = Vec::new();
-            for indices in split_indices {
-
-                let indices_vec = TryInto::<Vec<i64>>::try_into(indices)?;
-                let split = indices_vec.iter().map(|i| sentences.get(*i as usize).unwrap().to_owned()).collect::<Vec<String>>();
-                splits.push(split);
-            }
-
-            Ok(splits)
-
-        }
-
 
     }
 
