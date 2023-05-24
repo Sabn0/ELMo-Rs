@@ -41,7 +41,7 @@ fn main() {
     //
 
     //
-    // Create an ELM0 textual loader - data builder that moves data from strings to ints
+    // Create an ELMo textual loader - data builder that moves data from strings to ints
     let n_samples = (&sentences).len() as i64;
     let elmo_text_loader = ELMoText::new(sentences, token2int, char2int, &params);
     // -- end of data building --
@@ -76,7 +76,7 @@ fn main() {
     let mut devset_iter = iters.next();
     let elmo_train = ElmoTrainer::new();
     if let Err(e) = elmo_train.run_training(&mut trainset_iter, &mut devset_iter, &model, &mut vars, &params) {
-        panic!("{}", e)
+        panic!("problem during training: {}", e)
     };
     // -- end of training process --
     //
