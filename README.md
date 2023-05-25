@@ -32,4 +32,4 @@ Rust version 1.69.0, see Cargo.toml file for the packages I used.
 
 
 ## License
-Under [MIT license](...) and [Apache License, Version 2.0](...).
+Under [MIT license](https://github.com/Sabn0/ELMo-Rs/blob/main/LICENSE-MIT) and [Apache License, Version 2.0](...).
