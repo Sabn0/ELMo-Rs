@@ -25,7 +25,7 @@ lacks some details. For example there is no support for multi-threading in the t
 
 
 ## References
-* This is a rust implementation of the ELMo architecture described in the [paper](https://aclanthology.org/N18-1202/), by <ins>Matthew E. Peters at al., 2018</ins>.
+It is a rust implementation of the ELMo architecture described in the [paper](https://aclanthology.org/N18-1202/), by <ins>Matthew E. Peters at al., 2018</ins>.
 
 
 ## Software
