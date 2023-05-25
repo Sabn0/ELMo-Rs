@@ -1,4 +1,4 @@
 {
-    "corpus_file": "Input/corpus.txt",
+    "corpus_file": "/home/noam/Desktop/sample.txt",
     "output_file": "Output/model"
 }
