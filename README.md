@@ -3,8 +3,7 @@
 ![example workflow](https://github.com/Sabn0/ELMo-Rs/actions/workflows/rust.yml/badge.svg)
 ![rust version](https://img.shields.io/badge/rust-1.69.0-blue)
 
-An rust implementation of the architecture of the **ELMo** model based on the details in the [ELMo's paper](https://arxiv.org/pdf/1802.05365.pdf). I implemented it with a main focus on experimenting with the [tch](https://crates.io/crates/tch) crate. The main.rs binary works in a 
-train-dev-test setting on toy data, but I made no testing over large amounts of data.
+An rust implementation of the architecture of the **ELMo** NLP model based on the details in the [ELMo's paper](https://arxiv.org/pdf/1802.05365.pdf). I implemented it with a main focus on experimenting with the [tch](https://crates.io/crates/tch) crate. The main.rs binary works in a train-dev-test setting on toy data, but I made no testing over large amounts of data.
 
  ## Details
 If wished, you run a training process after cloning the repo using :
