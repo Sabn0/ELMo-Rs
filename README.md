@@ -19,7 +19,7 @@ If wished, you can run a training process after cloning the repo using :
  ```
 The program will run with the default parameters, that can also be changed using the json file. Input corpus will be split to train, dev and test sets.
 
-I didn't test the code on any real data, my focus was on the model architecture and the tch crate usage. In particular the training process
+I didn't test the code on any large amounts of data, my focus was on the model architecture and the tch crate usage. In particular the training process
 lacks some details: For example, there is no support for multi-threading in the training process.
 
 
